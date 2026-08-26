@@ -3,7 +3,7 @@
  * @brief NIRDHVANI: Tactical AI/ML Adaptive Noise Cancellation
  * Noise-Isolated Impulse-Resilient Real-Time Decoupled Hardware Voice Adaptive Network Isolator
  * High-performance, low-latency C implementation of Normalized LMS (NLMS)
- * with Acoustic Blast Limiter for ESP32 and STM32 Cortex-M.
+ * with Double-Talk Detection (DTD) and Acoustic Blast Limiter.
  */
 
 #ifndef NIRDHVANI_NLMS_FILTER_H
@@ -23,9 +23,10 @@ extern "C" {
 #define TACANC_DEFAULT_EPSILON 1e-4f
 #define TACANC_DEFAULT_LEAKAGE 1e-5f
 #define TACANC_LIMITER_THRESH  0.80f
+#define TACANC_DEFAULT_DTD_TH  3.50f  /**< Double-Talk power ratio threshold */
 
 /**
- * @brief Configuration parameters for NLMS Adaptive Filter
+ * @brief Configuration parameters for NLMS Adaptive Filter with DTD
  */
 typedef struct {
     uint16_t num_taps;     /**< Filter length (e.g. 32, 64, 128) */
@@ -33,18 +34,23 @@ typedef struct {
     float epsilon;         /**< Regularizer to avoid div-by-zero */
     float leakage;         /**< Leakage coefficient (prevents weight drift) */
     float limiter_thresh;  /**< Acoustic impulse clamp threshold (0.1 to 1.0) */
+    float dtd_threshold;   /**< Double-talk detection ratio threshold */
     bool soft_clamping;    /**< True: smooth tanh, False: hard clip */
+    bool enable_dtd;       /**< True: enable Double-Talk Detector weight freeze */
 } nlms_config_t;
 
 /**
- * @brief State structure for NLMS Adaptive Filter
+ * @brief State structure for NLMS Adaptive Filter with DTD
  */
 typedef struct {
     nlms_config_t config;
     float weights[TACANC_MAX_TAPS];     /**< Filter tap weights w(n) */
     float x_buffer[TACANC_MAX_TAPS];    /**< Circular/Linear delay line x(n) */
     uint16_t buffer_index;              /**< Current circular index */
-    float current_power;                /**< Running signal energy ||x(n)||^2 */
+    float current_power_x;              /**< Running reference energy ||x(n)||^2 */
+    float current_power_d;              /**< Running throat mic energy ||d(n)||^2 */
+    bool dtd_active;                    /**< True when double-talk is detected */
+    uint32_t dtd_freeze_count;          /**< Number of samples weight update was frozen */
     uint32_t samples_processed;         /**< Diagnostics counter */
     uint32_t blast_clamps_count;        /**< Acoustic spikes clamped */
 } nlms_filter_t;
@@ -63,7 +69,7 @@ void nlms_filter_init(nlms_filter_t *filter, const nlms_config_t *config);
 void nlms_filter_reset(nlms_filter_t *filter);
 
 /**
- * @brief Process a single sample pair in real time.
+ * @brief Process a single sample pair in real time with DTD protection.
  * @param filter Pointer to filter state structure.
  * @param d_sample Desired signal sample from throat mic (speech + leakage).
  * @param x_sample Reference noise sample from ambient mic.
@@ -100,11 +106,11 @@ void nlms_filter_process_block_q15(nlms_filter_t *filter,
                                    uint16_t block_size);
 
 /**
- * @brief Acoustic impulse limiter (hearing protection).
+ * @brief Acoustic impulse limiter (hearing protection) with guaranteed ceiling clamping.
  * @param sample Raw output sample.
  * @param threshold Clamping threshold [0.0, 1.0].
  * @param soft_knee If true, applies smooth tanh compression.
- * @return Clamped safe sample.
+ * @return Clamped safe sample in [-1.0, 1.0].
  */
 static inline float tacanc_impulse_limiter(float sample, float threshold, bool soft_knee) {
     if (!soft_knee) {
@@ -131,4 +137,4 @@ static inline float tacanc_impulse_limiter(float sample, float threshold, bool s
 }
 #endif
 
-#endif // TACANC_NLMS_FILTER_H
+#endif // NIRDHVANI_NLMS_FILTER_H

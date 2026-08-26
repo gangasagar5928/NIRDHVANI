@@ -2,7 +2,7 @@
  * @file nlms_filter.c
  * @brief NIRDHVANI: Tactical AI/ML Adaptive Noise Cancellation
  * Noise-Isolated Impulse-Resilient Real-Time Decoupled Hardware Voice Adaptive Network Isolator
- * Core C implementation of Normalized LMS with SIMD/FPU vectorization hooks.
+ * Core C implementation of Normalized LMS with Double-Talk Detection (DTD) and SIMD hooks.
  */
 
 #include "nlms_filter.h"
@@ -25,13 +25,18 @@ void nlms_filter_init(nlms_filter_t *filter, const nlms_config_t *config) {
         if (filter->config.epsilon <= 0.0f) {
             filter->config.epsilon = TACANC_DEFAULT_EPSILON;
         }
+        if (filter->config.dtd_threshold <= 0.0f) {
+            filter->config.dtd_threshold = TACANC_DEFAULT_DTD_TH;
+        }
     } else {
         filter->config.num_taps = TACANC_DEFAULT_TAPS;
         filter->config.mu = TACANC_DEFAULT_MU;
         filter->config.epsilon = TACANC_DEFAULT_EPSILON;
         filter->config.leakage = TACANC_DEFAULT_LEAKAGE;
         filter->config.limiter_thresh = TACANC_LIMITER_THRESH;
+        filter->config.dtd_threshold = TACANC_DEFAULT_DTD_TH;
         filter->config.soft_clamping = true;
+        filter->config.enable_dtd = true;
     }
 
     nlms_filter_reset(filter);
@@ -42,7 +47,10 @@ void nlms_filter_reset(nlms_filter_t *filter) {
     memset(filter->weights, 0, sizeof(filter->weights));
     memset(filter->x_buffer, 0, sizeof(filter->x_buffer));
     filter->buffer_index = 0;
-    filter->current_power = 0.0f;
+    filter->current_power_x = 0.0f;
+    filter->current_power_d = 0.0f;
+    filter->dtd_active = false;
+    filter->dtd_freeze_count = 0;
     filter->samples_processed = 0;
     filter->blast_clamps_count = 0;
 }
@@ -54,14 +62,13 @@ float nlms_filter_process_sample(nlms_filter_t *filter, float d_sample, float x_
     const float leakage = filter->config.leakage;
 
     // 1. Shift buffer (linear shift for predictable SIMD / cache locality)
-    // Moving N-1 elements
     for (int i = N - 1; i > 0; --i) {
         filter->x_buffer[i] = filter->x_buffer[i - 1];
     }
     filter->x_buffer[0] = x_sample;
 
     // 2. Compute predicted noise: y(n) = sum_{k=0}^{N-1} w_k * x(n-k)
-    // and compute energy ||x(n)||^2
+    // and compute instantaneous reference buffer energy ||x(n)||^2
     float y_hat = 0.0f;
     float power_x = 0.0f;
 
@@ -74,15 +81,35 @@ float nlms_filter_process_sample(nlms_filter_t *filter, float d_sample, float x_
     // 3. Compute error (clean speech): e(n) = d(n) - y_hat(n)
     float e_n = d_sample - y_hat;
 
-    // 4. Normalized step size factor: mu / (eps + ||x||^2)
-    float norm_factor = mu / (eps + power_x);
+    // 4. Double-Talk Detection (DTD) Engine
+    // Track running power with exponential moving average (alpha = 0.95)
+    const float alpha = 0.95f;
+    filter->current_power_x = alpha * filter->current_power_x + (1.0f - alpha) * (x_sample * x_sample);
+    filter->current_power_d = alpha * filter->current_power_d + (1.0f - alpha) * (d_sample * d_sample);
+
+    bool freeze_update = false;
+    if (filter->config.enable_dtd) {
+        // If throat signal power is significantly higher than ambient reference power,
+        // user is speaking loudly (Double-Talk condition). Freeze weight adaptation.
+        float power_ratio = filter->current_power_d / (filter->current_power_x + 1e-5f);
+        if (power_ratio > filter->config.dtd_threshold && filter->current_power_d > 0.01f) {
+            freeze_update = true;
+            filter->dtd_active = true;
+            filter->dtd_freeze_count++;
+        } else {
+            filter->dtd_active = false;
+        }
+    }
 
     // 5. Weight update: w(n+1) = (1 - gamma*mu)*w(n) + norm_factor * e(n) * x(n)
-    float leak_factor = 1.0f - (leakage * mu);
-    float err_scaled = norm_factor * e_n;
+    if (!freeze_update) {
+        float norm_factor = mu / (eps + power_x);
+        float leak_factor = 1.0f - (leakage * mu);
+        float err_scaled = norm_factor * e_n;
 
-    for (uint16_t i = 0; i < N; ++i) {
-        filter->weights[i] = (filter->weights[i] * leak_factor) + (err_scaled * filter->x_buffer[i]);
+        for (uint16_t i = 0; i < N; ++i) {
+            filter->weights[i] = (filter->weights[i] * leak_factor) + (err_scaled * filter->x_buffer[i]);
+        }
     }
 
     filter->samples_processed++;
@@ -123,7 +150,6 @@ void nlms_filter_process_block_q15(nlms_filter_t *filter,
         float x_f = (float)x_q15[n] * q15_to_float;
         float e_f = nlms_filter_process_sample(filter, d_f, x_f);
 
-        // Clamp to Q15 range
         if (e_f > 1.0f) e_f = 1.0f;
         if (e_f < -1.0f) e_f = -1.0f;
         out_q15[n] = (int16_t)(e_f * float_to_q15);
