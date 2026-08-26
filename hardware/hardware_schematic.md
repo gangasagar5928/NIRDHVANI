@@ -186,3 +186,19 @@ ESP32 DAC (GPIO25) -----[ R_REC: 100Ω ]-----+-----[ C_DC: 1uF ]-----> PAM8403 L
 | **Control Switch** | ANC Bypass Toggle | GPIO18 (Pull-up) | PB12 (Pull-up) |
 | **Analog Rail (VCC)**| Clean Filtered 3.3V | 3V3 Pin | 3V3 Pin |
 | **Analog Ground** | AGND | GND Pin | GND Pin |
+
+---
+
+## 8. Hardware Diagram Mapping & Engineering Evolution (L1 to L6)
+
+The attached 3D view and exploded architecture diagrams illustrate the 6-layer physical stack. The table below details the original design vs. the audit-hardened engineering enhancements:
+
+| Layer # | Diagram Label | Initial Conceptual Diagram | Audit-Hardened Engineering Implementation | Why the Change Was Made |
+| :---: | :--- | :--- | :--- | :--- |
+| **L6** | **Tactical Headset & Transducer** | Single Piezo Neckband + 3.5mm Jack | Dual-Piezo Differential Contact Assembly with silicone damping pads | Eliminates mechanical neck rotation artifacts and cable strain. |
+| **L5** | **High-Impedance Analog Front-End** | LM358 Op-Amp ($R_{in} = 10\text{ M}\Omega$) | **MCP6001 / TS321 / OPA2353** True Rail-to-Rail I/O Buffer | LM358 clips at $\sim 2.1\text{ V}$ on $3.3\text{ V}$ rail. MCP6001 provides full $0.025\text{ V} - 3.275\text{ V}$ dynamic range without clipping. |
+| **L4** | **Ambient Reference Layer** | MAX4466 / ICS-40730 MEMS Mic | MAX4466 with balanced acoustic overload mesh & gain-trim calibration | Matches ambient noise RMS with throat leakage floor during silence. |
+| **L3** | **DSP & Neural Computing Layer** | ESP32 / STM32F4 Dual-ADC ($\mu=0.3, \epsilon=10^{-4}$) | **NLMS + Double-Talk Detector (DTD) + `esp_adc_cal` eFuse Linearization + Core 1 Isolation** | Protects vocal integrity from weight divergence during loud speech; eliminates FreeRTOS interrupt jitter. |
+| **L2** | **Power & Amplifier Layer** | PAM8403 3W + 18650 Li-ion + TP4056 | PAM8403 + **$100\Omega @ 100\text{ MHz}$ Ferrite Bead LC Filter + $159\text{ kHz}$ RC Reconstruction Filter** | Decouples 250 kHz Class-D PWM switching ripple from analog input; suppresses DAC quantization step noise. |
+| **L1** | **Rugged Enclosure Layer** | MIL-STD-810G Aluminum / Polycarbonate | Aluminum Faraday chassis with Chassis-to-Signal star grounding & TVS ESD diodes | Protects against combat vehicle alternator ripple, high-power VHF/UHF radio RF, and static discharges. |
+
