@@ -67,7 +67,7 @@ jobs:
 
       - name: Compile and Execute Native C Unit Tests
         run: |
-          gcc -Wall -Wextra -O3 -I firmware/include firmware/src/nlms_filter.c firmware/tests/test_nlms.c -o test_nlms_bin -lm
+          gcc -Wall -Wextra -O3 -I firmware/include firmware/src/nlms_filter.c firmware/src/tinyml_anc.c firmware/tests/test_nlms.c -o test_nlms_bin -lm
           ./test_nlms_bin
 
       - name: Set up Python for Test Harness
@@ -97,4 +97,5 @@ jobs:
       - name: Syntax Check C Firmware Modules
         run: |
           clang -fsyntax-only -Wall -Wextra -I firmware/include firmware/src/nlms_filter.c
+          clang -fsyntax-only -Wall -Wextra -I firmware/include firmware/src/tinyml_anc.c
           clang -fsyntax-only -Wall -Wextra -I firmware/include firmware/stm32/stm32_tacanc_driver.c
