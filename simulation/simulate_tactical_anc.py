@@ -13,6 +13,7 @@ Full Multi-Segment Benchmark Suite:
 
 import os
 import sys
+from typing import Tuple, Dict, List
 import numpy as np
 import scipy.signal as signal
 from scipy.io import wavfile
