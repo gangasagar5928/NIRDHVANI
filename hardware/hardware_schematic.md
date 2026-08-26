@@ -56,43 +56,43 @@
 
 A piezoelectric contact disc exhibits high source impedance ($R_s > 1\text{ M}\Omega$) and capacitive behavior ($C_s \approx 20\text{ nF}$). Direct connection to an unbuffered MCU ADC ($R_{in} \approx 10\text{ k}\Omega - 50\text{ k}\Omega$) forms a high-pass filter with a high cutoff frequency ($f_c = \frac{1}{2\pi R C} \approx 160\text{ Hz} - 800\text{ Hz}$), severely attenuating speech fundamental frequencies ($F_0 \approx 85\text{ Hz} - 255\text{ Hz}$).
 
-### Op-Amp Selection: Rail-to-Rail MCP6001 / TS321 vs. LM358
-- **LM358 Limitations at 3.3V:** The LM358 has an upper output swing limited to $V_{CC} - 1.2\text{ V}$ ($V_{sat\_high} \approx 2.1\text{ V}$ on $3.3\text{ V}$). Biasing at $1.65\text{ V}$ yields only $450\text{ mV}$ positive headroom before clipping.
-- **MCP6001 / TS321 / OPA2353 Advantage:** True **Rail-to-Rail Input/Output (RRIO)** with output saturation within $25\text{ mV}$ of both supply rails ($0.025\text{ V} - 3.275\text{ V}$), providing a clean $\pm 1.6\text{ V}$ dynamic linear range.
+### Op-Amp Selection: Rail-to-Rail MCP6001 / TS321 (Primary Design)
+- **Primary Design:** **MCP6001 / TS321 / OPA2353** True **Rail-to-Rail Input/Output (RRIO)** with output saturation within $25\text{ mV}$ of both supply rails ($0.025\text{ V} - 3.275\text{ V}$), providing a clean $\pm 1.6\text{ V}$ dynamic linear range without clipping.
+- **Historical Reference:** Legacy LM358 op-amp from early v1.0 prototype is obsoleted due to non-rail-to-rail upper swing ($V_{sat} \approx 2.1\text{ V}$ on 3.3V).
 
-### MCP6001 Rail-to-Rail Voltage Follower Circuit Schematic
+### MCP6001 Rail-to-Rail Voltage Follower & BAT54S Transient Clamping Schematic
 
 ```
-               +3.3V_ANA (Filtered Analog Rail)
-                 |
-               [ R1: 100k ]
-                 |-----+-------- V_BIAS (1.65V Virtual Ground)
-                 |     |
-               [ R2: 100k ]  [ C_BIAS: 10uF Tantalum || 0.1uF Ceramic ]
-                 |     |
-                GND   GND
-                       |
-   PIEZO (+) ----------+---[ C_IN: 0.1uF Ceramic ]----+
-   (Throat Disc)                                      |
-                                                    [ R_IN: 10M ]
-   PIEZO (-) ----------- GND                          |
-                                                    V_BIAS (1.65V)
-                                                      |
-                                                      v
-                                                 |\
-                                                 | \  MCP6001 / TS321 (RRIO)
-                                    Non-Inv (+)  |  \
-                             ------------------->|   \
-                                                 |    \________ Pin 1 (V_OUT) ------> ESP32 GPIO34
-                                            +--->|    /             |                 (ADC1_CH6)
-                                            |    |   /              |
-                                            |    |  /               |
-                                            |    | /                |
-                                            |    |/                 |
-                                            +-----------------------+  (Unity Gain Feedback)
-                                                 |
-                                                GND
+                                          +3.3V_ANA
+                                              |
+                                            [▲] D1 (BAT54S Schottky)
+                                              |
+   PIEZO (+) ---[ C_IN: 0.1uF ]---[ R_PROT: 1kΩ ]---+------------+
+   (Throat Disc)                                    |            |
+                                                  [▼] D2       [ R_IN: 10M ]
+                                                    |            |
+                                                   GND         V_BIAS (1.65V)
+                                                                 |
+                                                                 v
+                                                            |\
+                                                            | \  MCP6001 / TS321 (RRIO)
+                                               Non-Inv (+)  |  \
+                                        ------------------->|   \
+                                                            |    \________ Pin 1 (V_OUT) ------> ESP32 GPIO34
+                                                       +--->|    /             |                 (ADC1_CH6)
+                                                       |    |   /              |
+                                                       |    |  /               |
+                                                       |    | /                |
+                                                       |    |/                 |
+                                                       +-----------------------+  (Unity Gain Feedback)
+                                                            |
+                                                           GND
 ```
+
+#### Hardware Overvoltage Protection Operation:
+- **Mechanical Blast Shocks:** Extreme acoustic shockwaves (>140 dB) or physical impacts on the piezo disc produce high peak voltages ($>15\text{ V}$).
+- **Dual Clamping Diodes:** D1 and D2 (BAT54S low-forward-drop Schottky) clamp raw transient voltages to $-0.3\text{ V} \le V_{\text{in}} \le +3.6\text{ V}$.
+- **Current Limiting:** $R_{\text{PROT}} = 1\text{ k}\Omega$ restricts peak diode current to $< 10\text{ mA}$, protecting the op-amp input stage and ADC pins before software limiting executes.
 
 ---
 
@@ -125,12 +125,13 @@ ESP32 DAC (GPIO25) -----[ R_REC: 100Ω ]-----+-----[ C_DC: 1uF ]-----> PAM8403 L
    Ambient Mic Power P_x(n) = 0.95*P_x(n-1) + 0.05*x^2(n)
 
    Ratio = P_d(n) / (P_x(n) + 1e-5)
-   IF (Ratio > 3.0 AND P_d(n) > 0.01):
+   IF (Ratio > 3.0 AND P_d(n) > 0.01) OR (|e(n)| > 0.85):
        -> Freeze Filter Weight Updates: w(n+1) = w(n)
        -> Maintain Subtraction: e(n) = d(n) - y(n)
        -> Trigger Status Indicator LED
 ```
 - **Voice Preservation:** Eliminates voice distortion and filter divergence when the operator speaks loudly during quiet battlefield moments.
+- **Bone-Conducted Shock Immunity:** Freezes weights if $|e(n)| > 0.85$, stopping blast shock energy from corrupting the FIR tap weights.
 
 ---
 
@@ -152,7 +153,7 @@ ESP32 DAC (GPIO25) -----[ R_REC: 100Ω ]-----+-----[ C_DC: 1uF ]-----> PAM8403 L
 
 ---
 
-## 6. EMI / RFI Shielding & Grounding Plan
+## 6. EMI / RFI Shielding & Targeted MIL-STD-810G Environmental Methods
 
 ```
    [ Aluminum Shielded Chassis / Enclosure ] ================== CHASSIS GND (Shield)
@@ -167,10 +168,12 @@ ESP32 DAC (GPIO25) -----[ R_REC: 100Ω ]-----+-----[ C_DC: 1uF ]-----> PAM8403 L
    Diodes  (100Ω @ 100MHz)    (Throat Sensor Cable)
 ```
 
-1. **Shielded Enclosure:** CNC anodized aluminum enclosure connected to outer cable shields.
-2. **Star Grounding:** Analog Ground (AGND) and Digital Ground (DGND) meet at a single central point.
-3. **TVS Protection:** Low-capacitance transient voltage suppressor (TVS) diodes protect all external connectors against ESD (>8kV contact / >15kV air).
-4. **Shielded Cables:** Throat sensor cable uses twisted pair with braided copper shielding grounded at the unit chassis.
+### Targeted Environmental Test Methods (Design Guidelines):
+- **MIL-STD-810G Method 514.6 (Vibration):** Category 20 (Ground Combat Vehicles — Tracked & Wheeled armor vibration spectrum $10\text{ Hz} - 500\text{ Hz}$).
+- **MIL-STD-810G Method 516.6 (Mechanical Shock):** Functional shock $40\text{ g}$, $11\text{ ms}$ half-sine pulse for vehicle weapon recoil.
+- **MIL-STD-810G Method 501.5 / 502.5 (High & Low Temperature):** Operating range $-20^\circ\text{C to }+60^\circ\text{C}$; Storage $-40^\circ\text{C to }+85^\circ\text{C}$.
+- **MIL-STD-810G Method 506.5 (Rain & Ingress):** IP54/IP67 sealed enclosure with silicone gaskets.
+*(Note: Full certified compliance requires accredited third-party test chamber qualification in production phase).*
 
 ---
 

@@ -12,13 +12,13 @@
 | :---: | :--- | :--- | :---: | :---: | :--- |
 | **1** | Main Compute MCU | ESP32-WROOM-32 (30-pin DevKit) | 1 | ₹280 | Dual 12-bit ADC (calibrated via eFuse), Core 1 isolated DSP, 8-bit internal DAC. |
 | **2** | Throat Contact Sensor | 27mm Brass Piezoelectric Transducer | 1 | ₹60 | Direct skin contact vocal cord vibration sensing. |
-| **3** | High-Z Rail-to-Rail Buffer | **MCP6001 / TS321** (or LM358*) | 1 | ₹25 | True Rail-to-Rail I/O op-amp ($R_{in} = 10\text{ M}\Omega$). *(LM358 is low-cost fallback with top 200mV swing limit).* |
+| **3** | High-Z Rail-to-Rail Buffer | **MCP6001 / TS321** (Single RRIO) | 1 | ₹25 | True Rail-to-Rail I/O op-amp ($R_{in} = 10\text{ M}\Omega$, 0.025V–3.275V swing). |
 | **4** | Ambient Noise Sensor | MAX4466 Electret Microphone Module | 1 | ₹145 | Adjustable pre-amp gain (25x–125x), captures airborne cockpit/engine noise. |
 | **5** | Audio Power Amp | PAM8403 Mini 3W Class-D Stereo Amp | 1 | ₹40 | High efficiency (>90%), drives 4Ω–32Ω tactical earphones. |
 | **6** | Output Interface | 3.5mm Female Audio Jack + 32Ω Earphones | 1 set | ₹75 | Low-latency listening interface. |
 | **7** | Power System | 3.7V 2000mAh 18650 Li-ion + TP4056 USB-C | 1 set | ₹120 | Protected rechargeable 3.7V source with overcharge/discharge IC. |
-| **8** | Passives & Shielding | 10MΩ, 100kΩ, 10kΩ, 0.1µF, 10µF, Shielded Cable| 1 set | ₹35 | Virtual ground bias network, anti-aliasing filter, braided cable. |
-| **TOTAL**| **Complete Prototype** | **NIRDHVANI Hackathon Unit** | — | **~₹780** | **Complete functional hardware unit** |
+| **8** | Passives & Protection | BAT54S Diodes, 10MΩ, 1kΩ, 100kΩ, 100Ω FB, 0.1µF, 10µF | 1 set | ₹35 | Input overvoltage clamping, virtual ground bias, LC/RC filters, shielded cable. |
+| **TOTAL**| **Complete Prototype** | **NIRDHVANI Hackathon Unit** | — | **₹780** | **Complete functional hardware unit** |
 
 *(Optional Audio Upgrade: External I2S 24-bit DAC Module MAX98357A / PCM5102A can be added for +₹90).*
 
