@@ -4,11 +4,11 @@ Sampling Rate: 16000 Hz
 NLMS Taps: 64
 Learning Rate (mu): 0.3
 Regularizer (epsilon): 0.0001
-Raw Input SNR: 0.60 dB
-Ideal Simulation Output SNR: 1.35 dB
-Ideal Simulation ERLE: 26.90 dB
-Hardware-Modeled Output SNR: 1.54 dB
-Hardware-Modeled ERLE: 24.90 dB
+Raw Input SNR: -0.11 dB
+Ideal Simulation Output SNR: 1.94 dB
+Ideal Simulation ERLE: 28.10 dB
+Hardware-Modeled Output SNR: 2.03 dB
+Hardware-Modeled ERLE: 25.56 dB
 
 Status: Simulation benchmark verified with non-linear ADC modeling.
 Physical hardware acoustic chamber testing in progress.
