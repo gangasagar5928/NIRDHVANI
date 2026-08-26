@@ -1,0 +1,100 @@
+name: NIRDHVANI CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  dsp-simulation-verification:
+    name: Acoustic DSP Simulation & Benchmark Verification
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install Simulation Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r simulation/requirements.txt
+          pip install pytest
+
+      - name: Run End-to-End Tactical Acoustic Simulation
+        run: |
+          python simulation/simulate_tactical_anc.py
+
+      - name: Validate Generated DSP Artifacts
+        run: |
+          test -f simulation/output/benchmark_report.txt
+          test -f simulation/output/tacanc_waveform_analysis.png
+          test -f simulation/output/1_clean_throat_speech.wav
+          test -f simulation/output/2_ambient_cockpit_noise.wav
+          test -f simulation/output/3_raw_throat_mixed_input.wav
+          test -f simulation/output/4_processed_anc_output.wav
+          cat simulation/output/benchmark_report.txt
+
+      - name: Upload Acoustic Artifacts
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nirdhvani-simulation-benchmarks
+          path: simulation/output/
+
+  c-dsp-firmware-unit-tests:
+    name: C DSP Algorithm & Firmware Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up GCC Compiler & Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc clang
+
+      - name: Compile and Execute Native C Unit Tests
+        run: |
+          gcc -Wall -Wextra -O3 -I firmware/include firmware/src/nlms_filter.c firmware/tests/test_nlms.c -o test_nlms_bin -lm
+          ./test_nlms_bin
+
+      - name: Set up Python for Test Harness
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+
+      - name: Run Python C-Logic Verification Suite
+        run: |
+          pip install numpy
+          python firmware/tests/verify_c_dsp.py
+
+  firmware-static-analysis:
+    name: Firmware Static Code Analysis & Syntax Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Clang & Static Analyzer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang clang-tools
+
+      - name: Syntax Check C Firmware Modules
+        run: |
+          clang -fsyntax-only -Wall -Wextra -I firmware/include firmware/src/nlms_filter.c
+          clang -fsyntax-only -Wall -Wextra -I firmware/include firmware/stm32/stm32_tacanc_driver.c
