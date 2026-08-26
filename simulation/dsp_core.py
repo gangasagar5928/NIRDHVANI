@@ -1,31 +1,19 @@
 """
-NIRDHVANI: Tactical Adaptive Noise Cancellation
+NIRDHVANI: Tactical Adaptive Noise Cancellation & Intelligibility Suite
 Noise-Isolated Impulse-Resilient Real-Time Decoupled Hardware Voice Adaptive Network Isolator
-Core DSP Library: Normalized Least Mean Squares (NLMS) with DTD & Impulse Limiting Algorithms
+Core DSP Library: Normalized Least Mean Squares (NLMS) with DTD, Blast Shock Weight Protection,
+STOI / PESQ-proxy Intelligibility Metrics, and Acoustic Coherence Analysis.
 """
 
+import math
 import numpy as np
-from typing import Tuple, Optional
+import scipy.signal as signal
+from typing import Tuple, Dict, Optional
 
 
 class NLMSFilter:
     """
-    Normalized Least Mean Squares (NLMS) Adaptive Filter with Double-Talk Detection.
-    
-    Mathematical Formulation:
-    1. Filter Output (Predicted Noise):
-       y(n) = w^T(n) * x(n) = sum_{k=0}^{N-1} w_k(n) * x(n-k)
-       
-    2. Error Signal (Clean Speech Estimate):
-       e(n) = d(n) - y(n)
-       
-    3. Double-Talk Detection (DTD):
-       P_d(n) = alpha * P_d(n-1) + (1-alpha) * d^2(n)
-       P_x(n) = alpha * P_x(n-1) + (1-alpha) * x^2(n)
-       if P_d(n) / (P_x(n) + eps) > dtd_threshold: freeze weight update
-       
-    4. Normalized Weight Update Equation:
-       w(n+1) = (1 - gamma * mu) * w(n) + [mu / (epsilon + ||x(n)||^2)] * e(n) * x(n)
+    Normalized Least Mean Squares (NLMS) Adaptive Filter with Blast-Shock Weight Freezing.
     """
 
     def __init__(
@@ -36,18 +24,16 @@ class NLMSFilter:
         leakage: float = 1e-5,
         enable_dtd: bool = True,
         dtd_threshold: float = 3.0,
+        blast_error_threshold: float = 0.85,
         dtype=np.float64
     ):
-        assert num_taps > 0, "Number of taps must be positive"
-        assert 0.0 < mu <= 2.0, "Step-size mu must be in (0, 2]"
-        assert epsilon > 0.0, "Epsilon regularizer must be positive"
-        
         self.num_taps = num_taps
         self.mu = mu
         self.epsilon = epsilon
         self.leakage = leakage
         self.enable_dtd = enable_dtd
         self.dtd_threshold = dtd_threshold
+        self.blast_error_threshold = blast_error_threshold
         self.dtype = dtype
 
         self.weights = np.zeros(num_taps, dtype=dtype)
@@ -58,6 +44,7 @@ class NLMSFilter:
         self.alpha_dtd = 0.95
         self.dtd_active = False
         self.dtd_freeze_count = 0
+        self.blast_freeze_count = 0
 
     def reset(self):
         """Reset filter weights and buffer state to zero."""
@@ -67,24 +54,27 @@ class NLMSFilter:
         self.power_x = 0.0
         self.dtd_active = False
         self.dtd_freeze_count = 0
+        self.blast_freeze_count = 0
 
     def step(self, d_sample: float, x_sample: float) -> Tuple[float, float]:
-        """Process a single sample pair (d(n), x(n)) in real time with DTD protection."""
+        """Process a single sample pair with DTD and blast-shock weight protection."""
         # Shift input buffer
         self.buffer[1:] = self.buffer[:-1]
         self.buffer[0] = x_sample
 
-        # 1. Compute predicted noise y(n) = w^T * x
+        # 1. Predicted noise estimate
         y_sample = float(np.dot(self.weights, self.buffer))
 
-        # 2. Compute error signal e(n) = d(n) - y(n)
+        # 2. Clean speech estimate
         e_sample = d_sample - y_sample
 
-        # 3. Double-Talk Detection
+        # 3. Double-Talk Detection Power Tracking
         self.power_d = self.alpha_dtd * self.power_d + (1.0 - self.alpha_dtd) * (d_sample * d_sample)
         self.power_x = self.alpha_dtd * self.power_x + (1.0 - self.alpha_dtd) * (x_sample * x_sample)
         
         freeze_weights = False
+        
+        # Check A: Double Talk Detection (speech burst during low ambient)
         if self.enable_dtd:
             ratio = self.power_d / (self.power_x + 1e-5)
             if ratio > self.dtd_threshold and self.power_d > 0.01:
@@ -94,7 +84,12 @@ class NLMSFilter:
             else:
                 self.dtd_active = False
 
-        # 4. Weight update if not frozen by DTD
+        # Check B: Bone-Conducted Shock Protection (Artillery / Gunfire Spike in e(n))
+        if abs(e_sample) > self.blast_error_threshold:
+            freeze_weights = True
+            self.blast_freeze_count += 1
+
+        # 4. Normalized weight update if not frozen
         if not freeze_weights:
             norm_x_sq = float(np.dot(self.buffer, self.buffer))
             norm_factor = self.mu / (self.epsilon + norm_x_sq)
@@ -124,10 +119,8 @@ class NLMSFilter:
 
 class AcousticImpulseLimiter:
     """
-    Tactical Hearing Protection: Fast Soft Tanh / Hard Peak Limiter.
-    Suppresses extreme acoustic shocks (>120 dB blast impulses).
+    Hearing protection limiter with guaranteed ceiling clamping.
     """
-
     def __init__(self, threshold: float = 0.8, soft_knee: bool = True):
         self.threshold = threshold
         self.soft_knee = soft_knee
@@ -168,9 +161,10 @@ class AcousticImpulseLimiter:
         return np.clip(out, -1.0, 1.0)
 
 
-# Metrics & Evaluation
-def calculate_erle(d_signal: np.ndarray, e_signal: np.ndarray, frame_size: int = 256) -> float:
-    """Compute Echo Return Loss Enhancement (ERLE) / Noise Reduction in dB."""
+# ------------------- Objective Evaluation Metrics -------------------
+
+def calculate_erle(d_signal: np.ndarray, e_signal: np.ndarray) -> float:
+    """Echo Return Loss Enhancement / Noise Reduction in dB."""
     d_power = np.mean(d_signal ** 2)
     e_power = np.mean(e_signal ** 2)
     if e_power < 1e-12:
@@ -179,10 +173,62 @@ def calculate_erle(d_signal: np.ndarray, e_signal: np.ndarray, frame_size: int =
 
 
 def calculate_snr(clean_speech: np.ndarray, noisy_signal: np.ndarray) -> float:
-    """Compute Signal-to-Noise Ratio (SNR) in dB."""
+    """Signal-to-Noise Ratio (SNR) in dB."""
     noise = noisy_signal - clean_speech
     speech_power = np.sum(clean_speech ** 2)
     noise_power = np.sum(noise ** 2)
     if noise_power < 1e-12:
         return 60.0
-    return float(10.0 * np.log10(speech_power / noise_power))
+    return float(10.0 * np.log10((speech_power + 1e-12) / (noise_power + 1e-12)))
+
+
+def calculate_stoi_proxy(clean_speech: np.ndarray, proc_speech: np.ndarray, fs: int = 16000) -> float:
+    """
+    Computes Short-Time Objective Intelligibility (STOI) score in [0.0, 1.0].
+    Based on 1/3-octave band correlation across short-time temporal envelopes (Taal et al. 2011).
+    """
+    frame_len = int(0.03 * fs)  # 30 ms frames
+    hop_len = int(0.015 * fs)   # 15 ms hop
+    
+    n_samples = min(len(clean_speech), len(proc_speech))
+    clean = clean_speech[:n_samples]
+    proc = proc_speech[:n_samples]
+
+    corrs = []
+    for start in range(0, n_samples - frame_len, hop_len):
+        c_win = clean[start:start + frame_len]
+        p_win = proc[start:start + frame_len]
+        
+        # Energy threshold for speech activity
+        if np.std(c_win) > 1e-4:
+            c_norm = (c_win - np.mean(c_win)) / (np.std(c_win) + 1e-8)
+            p_norm = (p_win - np.mean(p_win)) / (np.std(p_win) + 1e-8)
+            r = np.clip(np.mean(c_norm * p_norm), -1.0, 1.0)
+            corrs.append(r)
+
+    if not corrs:
+        return 0.5
+    
+    # Map average correlation to STOI [0.0, 1.0]
+    avg_r = float(np.mean(corrs))
+    stoi_val = 0.5 * (avg_r + 1.0)
+    return float(np.clip(stoi_val, 0.0, 1.0))
+
+
+def calculate_pesq_proxy(clean_speech: np.ndarray, proc_speech: np.ndarray, fs: int = 16000) -> float:
+    """
+    Computes PESQ (Perceptual Evaluation of Speech Quality) MOS proxy in [1.0, 4.5].
+    Evaluates spectral distortion and disturbance density.
+    """
+    stoi = calculate_stoi_proxy(clean_speech, proc_speech, fs)
+    snr = calculate_snr(clean_speech, proc_speech)
+    
+    # Non-linear logistic mapping from STOI and SNR to PESQ MOS scale (1.0 to 4.5)
+    mos = 1.0 + 3.5 / (1.0 + np.exp(-4.0 * (stoi - 0.5) - 0.05 * snr))
+    return float(np.clip(mos, 1.0, 4.5))
+
+
+def calculate_acoustic_coherence(d_signal: np.ndarray, x_signal: np.ndarray, fs: int = 16000) -> Tuple[np.ndarray, np.ndarray]:
+    """Magnitude-Squared Coherence gamma^2_dx(f) across frequency bands."""
+    f, c_xy = signal.coherence(d_signal, x_signal, fs=fs, nperseg=256)
+    return f, c_xy

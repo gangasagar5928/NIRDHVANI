@@ -1,14 +1,36 @@
-NIRDHVANI Tactical ANC Comms Benchmark Report
-==============================================
-Sampling Rate: 16000 Hz
-NLMS Taps: 64
-Learning Rate (mu): 0.3
-Regularizer (epsilon): 0.0001
-Raw Input SNR: -0.11 dB
-Ideal Simulation Output SNR: 1.94 dB
-Ideal Simulation ERLE: 28.10 dB
-Hardware-Modeled Output SNR: 2.03 dB
-Hardware-Modeled ERLE: 25.56 dB
+NIRDHVANI Tactical ANC Multi-Category Benchmark Report
+=======================================================
 
-Status: Simulation benchmark verified with non-linear ADC modeling.
-Physical hardware acoustic chamber testing in progress.
+1. Segmented Defence Noise Performance:
+   - 1. Stationary Noise (Engine):
+       * ERLE Noise Reduction : 30.38 dB
+       * STOI Intelligibility : 0.76 (Raw) -> 0.75 (Processed)
+       * PESQ MOS Quality     : 3.50 (Raw) -> 3.64 (Processed)
+       * SNR Gain             : +4.68 dB
+
+   - 2. Non-Stationary Noise (Track):
+       * ERLE Noise Reduction : 19.87 dB
+       * STOI Intelligibility : 0.87 (Raw) -> 0.84 (Processed)
+       * PESQ MOS Quality     : 4.02 (Raw) -> 3.89 (Processed)
+       * SNR Gain             : +-3.55 dB
+
+   - 3. Impulsive Noise (Artillery):
+       * ERLE Noise Reduction : 1.50 dB
+       * STOI Intelligibility : 1.00 (Raw) -> 0.97 (Processed)
+       * PESQ MOS Quality     : 4.21 (Raw) -> 4.15 (Processed)
+       * SNR Gain             : +-2.14 dB
+
+   - 4. Composite Combat Field:
+       * ERLE Noise Reduction : 18.13 dB
+       * STOI Intelligibility : 0.91 (Raw) -> 0.87 (Processed)
+       * PESQ MOS Quality     : 4.16 (Raw) -> 4.03 (Processed)
+       * SNR Gain             : +-4.22 dB
+
+2. TinyML Engine:
+   - Model Architecture : 2-Layer Quantized Perceptron (8 -> 16 -> 5)
+   - Dynamic mu Control : Neural Step-Size + Double-Talk Probability Freezing
+   - Noise Classifier   : Stationary, Non-Stationary, Impulsive Scene Detection
+
+3. Hardware Status:
+   - Modeled Constraints: 12-bit ADC DNL + 8-bit DAC Quantization + Clamping Diodes
+   - Verification Status: Simulation benchmark; physical chamber testing in progress.
