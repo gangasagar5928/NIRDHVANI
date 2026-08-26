@@ -1,0 +1,10 @@
+NIRDHVANI Tactical ANC Comms Benchmark Report
+==============================================
+Sampling Rate: 16000 Hz
+NLMS Taps: 64
+Learning Rate (mu): 0.3
+Regularizer (epsilon): 0.0001
+Raw Input SNR: 0.16 dB
+Processed Output SNR: 1.51 dB
+SNR Gain: +1.35 dB
+Noise Attenuation (ERLE): 28.00 dB
