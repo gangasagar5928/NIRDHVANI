@@ -7,8 +7,8 @@
   <img src="https://img.shields.io/badge/CI%2FCD-Passing-brightgreen?style=for-the-badge&logo=githubactions" alt="CI/CD Status">
   <img src="https://img.shields.io/badge/Platform-ESP32%20%7C%20STM32-blue?style=for-the-badge&logo=espressif" alt="Hardware Platform">
   <img src="https://img.shields.io/badge/Language-ANSI%20C%20%7C%20C%2B%2B%20%7C%20Python-orange?style=for-the-badge&logo=c" alt="Languages">
-  <img src="https://img.shields.io/badge/Noise%20Reduction->27.75%20dB-success?style=for-the-badge" alt="ERLE Metric">
-  <img src="https://img.shields.io/badge/Latency-<4.0%20ms-purple?style=for-the-badge" alt="Latency">
+  <img src="https://img.shields.io/badge/Simulated%20ERLE->24.90%20dB-success?style=for-the-badge" alt="ERLE Metric">
+  <img src="https://img.shields.io/badge/Block%20Latency-<4.0%20ms-purple?style=for-the-badge" alt="Latency">
 </p>
 
 ---
@@ -40,15 +40,39 @@ In extreme military acoustic environments (**120 dB to 140 dB SPL** inside Arjun
 | Layer / Feature | Technical Implementation | Practical Benefit |
 | :--- | :--- | :--- |
 | **Layer 6: Speech Capture** | 27mm Dual-Piezo Contact Transducer | Samples vocal cord tissue vibrations directly; immune to airborne noise. |
-| **Layer 5: Active Buffer** | LM358 High-Z Voltage Follower ($R_{in} = 10\text{ M}\Omega$) | Prevents capacitive low-frequency speech attenuation ($100\text{ Hz} - 300\text{ Hz}$). |
+| **Layer 5: Active Buffer** | MCP6001 / TS321 Rail-to-Rail Buffer ($R_{in} = 10\text{ M}\Omega$) | Prevents low-frequency speech attenuation; provides clean 0–3.3V dynamic range. |
 | **Layer 4: Reference Noise** | MAX4466 / Knowles MEMS (>130 dB AOP) | Samples ambient cockpit drone, engine rumble, and gunfire noise. |
-| **Layer 3: DSP Core** | Embedded Normalized LMS (NLMS) Engine | Computes $e(n) = d(n) - \mathbf{w}^T(n)\mathbf{x}(n)$ in $< 4\text{ ms}$ on MCU. |
-| **Layer 2: Hearing Guard** | Soft Tanh Impulse Blast Limiter | Clamps muzzle blast shocks ($>85\text{ dBA}$) to protect eardrums. |
+| **Layer 3: DSP Core** | Embedded Normalized LMS (NLMS) Engine | Computes $e(n) = d(n) - \mathbf{w}^T(n)\mathbf{x}(n)$ in $< 4\text{ ms}$ on isolated Core 1. |
+| **Layer 2: Hearing Guard** | Soft Tanh Impulse Blast Limiter | Clamps muzzle blast shocks ($>85\text{ dBA}$) to protect operator eardrums. |
 | **Layer 1: Rugged Chassis** | MIL-STD-810G Compatible Enclosure | Shock-absorbing, splash-resistant tactical field unit with 12+ hr battery. |
 
 ---
 
-## 📐 2. Mathematical Formulation & DSP Architecture
+## ⚠️ 2. Engineering Realities, Hardware Caveats & Mitigations
+
+> [!IMPORTANT]
+> **Simulation Benchmark vs. Physical Prototype Status:**  
+> The **26.90 dB (ideal floating-point)** and **24.90 dB (hardware-modeled)** ERLE figures are verified in the simulation benchmark suite with non-linear ADC/DAC error injection. Physical acoustic chamber testing on prototype hardware is actively in progress.
+
+### Critical Engineering Mitigations
+1. **ESP32 ADC Non-Linearity Compensation:**
+   - The ESP32 12-bit SAR ADC exhibits non-linear DNL errors and dead zones near rails.
+   - *Mitigation:* Firmware integrates `esp_adc_cal` factory eFuse characterization and biases the analog front-end at $1.65\text{ V}$ to operate within the linear $0.5\text{ V} - 2.8\text{ V}$ ADC range.
+2. **Op-Amp Rail-to-Rail Selection (MCP6001 vs. LM358):**
+   - The legacy LM358 op-amp has an output upper swing limited to $\sim 2.1\text{ V}$ on a $3.3\text{ V}$ supply (clipping strong speech peaks).
+   - *Mitigation:* Recommended hardware builds use **MCP6001 / TS321 / OPA2353** Rail-to-Rail I/O op-amps ($V_{\text{sat}} < 25\text{ mV}$), preserving full $\pm 1.6\text{ V}$ AC dynamic range.
+3. **Core Isolation & Zero Jitter FreeRTOS Design:**
+   - 16 kHz sample-by-sample interrupts can suffer from FreeRTOS task scheduling jitter.
+   - *Mitigation:* The DSP processing task is pinned strictly to **Core 1** at maximum priority (`configMAX_PRIORITIES - 1`), while background tasks and serial telemetry run on Core 0.
+4. **Resolution Honesty (ADC vs. DAC):**
+   - The prototype uses a 12-bit calibrated ADC input and the internal 8-bit DAC (`GPIO25`) for output.
+   - Production designs incorporate an external 24-bit I2S audio codec (TI TLV320AIC3254 / MAX98357A) for $>90\text{ dB}$ dynamic range.
+5. **Tactical EMI / RFI Shielding Architecture:**
+   - Aluminum Faraday enclosure, star ground topology, ferrite bead filtering on power rails, and shielded twisted-pair cabling protect against combat vehicle RF interference.
+
+---
+
+## 📐 3. Mathematical Formulation & DSP Architecture
 
 ```
 [ Throat Sensor d(n) ] ----(+)----------------------------> [ Soft Tanh Limiter ] ---> Clean Output e(n)
@@ -91,10 +115,10 @@ e(n), & |e(n)| \le V_{\text{th}}
 
 ---
 
-## 🛠️ 3. Hardware Schematic & Pin Mapping
+## 🛠️ 4. Hardware Schematic & Pin Mapping
 
 ```
-[ Piezo Throat Sensor ]  ---> [ LM358 High-Z Buffer ]  ---> ESP32 GPIO34 (ADC1_CH6)
+[ Piezo Throat Sensor ]  ---> [ MCP6001 High-Z RRIO ]  ---> ESP32 GPIO34 (ADC1_CH6)
 [ MAX4466 Ambient Mic ]  ---> [ Pre-Amp Stage       ]  ---> ESP32 GPIO35 (ADC1_CH7)
 
                     +-------------------------+
@@ -103,7 +127,7 @@ e(n), & |e(n)| \le V_{\text{th}}
                     |  DMA Ping-Pong Buffers  |
                     +------------+------------+
                                  |
-                          ESP32 GPIO25 (DAC_1)
+                          ESP32 GPIO25 (DAC_1) / I2S
                                  |
                                  v
                      [ PAM8403 Audio Amplifier ]
@@ -116,9 +140,9 @@ e(n), & |e(n)| \le V_{\text{th}}
 
 | ESP32 Pin | Function | Connection Details |
 | :--- | :--- | :--- |
-| **`GPIO34 (ADC1_CH6)`** | Throat Mic Input | LM358 buffered vocal cord signal ($d(n)$) |
+| **`GPIO34 (ADC1_CH6)`** | Throat Mic Input | MCP6001 buffered vocal cord signal ($d(n)$) |
 | **`GPIO35 (ADC1_CH7)`** | Ambient Mic Input | MAX4466 ambient cockpit reference ($x(n)$) |
-| **`GPIO25 (DAC1)`** | Audio Output | Processed clean speech to PAM8403 ($e(n)$) |
+| **`GPIO25 (DAC1)`** | Audio Output | Processed clean speech to PAM8403 ($e(n)$, 8-bit) |
 | **`GPIO2`** | ANC Active LED | Blue LED on when filtering is enabled |
 | **`GPIO4`** | Blast Limiter LED | Flashes when artillery shockwave is clamped |
 | **`GPIO18`** | Bypass Switch | Toggles between raw throat and filtered ANC |
@@ -127,7 +151,7 @@ e(n), & |e(n)| \le V_{\text{th}}
 
 ---
 
-## 💻 4. Repository Structure
+## 💻 5. Repository Structure
 
 ```
 NIRDHVANI/
@@ -142,11 +166,11 @@ NIRDHVANI/
 │       ├── nirdhvani_3d_prototype_view.jpg
 │       └── nirdhvani_exploded_hardware_architecture.jpg
 ├── hardware/
-│   ├── hardware_schematic.md        # LM358 circuit, MAX4466 & PAM8403 wiring
+│   ├── hardware_schematic.md        # MCP6001 circuit, MAX4466 & PAM8403 wiring, EMI plan
 │   └── bom.md                       # Hackathon vs Military Grade BOM breakdown
 ├── simulation/
 │   ├── dsp_core.py                  # Core NLMS filter & impulse limiter classes
-│   ├── simulate_tactical_anc.py     # 120dB cockpit simulation, plots, and WAV audio
+│   ├── simulate_tactical_anc.py     # 120dB cockpit simulation, ADC non-linearities, WAV audio
 │   ├── requirements.txt             # Python dependencies
 │   └── output/                      # Generated WAV samples & benchmark plots
 │       ├── 1_clean_throat_speech.wav
@@ -161,7 +185,7 @@ NIRDHVANI/
 │   ├── src/
 │   │   └── nlms_filter.c            # ANSI C NLMS signal processing engine
 │   ├── esp32/
-│   │   ├── main_esp32.cpp           # Production ESP32 firmware with FreeRTOS & Timer ISR
+│   │   ├── main_esp32.cpp           # ESP32 firmware with eFuse ADC calibration & Core 1 isolation
 │   │   └── platformio.ini           # PlatformIO project config
 │   ├── stm32/
 │   │   └── stm32_tacanc_driver.c    # STM32 CMSIS-DSP DMA double buffer driver
@@ -174,7 +198,7 @@ NIRDHVANI/
 
 ---
 
-## 🚀 5. Quickstart & Verification
+## 🚀 6. Quickstart & Verification
 
 ### Running the Python Simulation & Acoustic Benchmark
 ```bash
@@ -192,17 +216,17 @@ python firmware/tests/verify_c_dsp.py
 
 ---
 
-## 📊 6. Performance Benchmarks
+## 📊 7. Performance Benchmarks
 
-| Metric | Target Specification | NIRDHVANI Verified Benchmark |
-| :--- | :--- | :--- |
-| **Sampling Rate** | $\ge 16\text{ kHz}$ / 12-bit | **16.0 kHz / 12-bit Synchronous Dual ADC** |
-| **Processing Latency** | $< 10\text{ ms}$ | **< 4.0 ms (64-sample block)** |
-| **Noise Attenuation (ERLE)**| $> 18\text{ dB}$ | **+27.75 to 28.00 dB Reduction** |
-| **Blast Limiter Response** | $< 2.0\text{ ms}$ | **< 1.0 ms Soft-Tanh Clamping** |
-| **Battery Life** | $> 8\text{ hours}$ | **> 12 hours continuous on 18650 Li-ion** |
-| **Hackathon Prototype BOM** | $< ₹1000$ | **₹765 INR (~$9.20 USD)** |
-| **Industrial Production BOM**| $< $10 USD | **~₹380 INR (~$4.60 USD)** |
+| Metric | Target Specification | Simulation Benchmark (Ideal) | Modeled Hardware (12b ADC / 8b DAC) |
+| :--- | :--- | :--- | :--- |
+| **Sampling Rate** | $\ge 16\text{ kHz}$ / 12-bit | **16.0 kHz** | **16.0 kHz (eFuse Calibrated)** |
+| **Processing Latency** | $< 10\text{ ms}$ | **< 4.0 ms** | **< 4.0 ms (64-sample block)** |
+| **Noise Attenuation (ERLE)**| $> 18\text{ dB}$ | **+26.90 dB** | **+24.90 dB** |
+| **Blast Limiter Response** | $< 2.0\text{ ms}$ | **< 1.0 ms** | **< 1.0 ms Soft-Tanh Clamping** |
+| **Battery Life** | $> 8\text{ hours}$ | — | **> 12 hours continuous on 18650 Li-ion** |
+| **Hackathon Prototype BOM** | $< ₹1000$ | — | **₹780 INR (~$9.40 USD)** |
+| **Industrial Production BOM**| $< $10 USD | — | **~₹380 INR (~$4.60 USD)** |
 
 ---
 
