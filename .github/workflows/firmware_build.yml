@@ -1,0 +1,40 @@
+name: PlatformIO Firmware Build
+
+on:
+  push:
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/firmware_build.yml'
+  pull_request:
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/firmware_build.yml'
+  workflow_dispatch:
+
+jobs:
+  build-esp32:
+    name: Build ESP32 Production Firmware
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install PlatformIO Core
+        run: |
+          pip install --upgrade platformio
+
+      - name: Build ESP32 Firmware
+        run: |
+          mkdir -p pio_build_env/src pio_build_env/include
+          cp firmware/esp32/main_esp32.cpp pio_build_env/src/
+          cp firmware/src/nlms_filter.c pio_build_env/src/
+          cp firmware/include/nlms_filter.h pio_build_env/include/
+          cp firmware/esp32/platformio.ini pio_build_env/
+          cd pio_build_env && pio run
