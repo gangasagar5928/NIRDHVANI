@@ -1,6 +1,6 @@
 /**
  * @file test_nlms.c
- * @brief C Unit Test for NIRDHVANI NLMS Algorithm & Impulse Limiter
+ * @brief C Unit Test for NIRDHVANI NLMS Algorithm, DTD & Impulse Limiter
  */
 
 #include <stdio.h>
@@ -9,12 +9,12 @@
 #include <assert.h>
 #include "../include/nlms_filter.h"
 
-#define TEST_SAMPLES 1000
+#define TEST_SAMPLES 1500
 #define PI 3.14159265358979323846
 
 int main() {
     printf("=====================================================\n");
-    printf("  NIRDHVANI C Unit Test: NLMS Filter & Limiter        \n");
+    printf("  NIRDHVANI C Unit Test: NLMS Filter, DTD & Limiter   \n");
     printf("=====================================================\n");
 
     nlms_filter_t filter;
@@ -22,31 +22,35 @@ int main() {
         .num_taps = 32,
         .mu = 0.35f,
         .epsilon = 1e-4f,
-        .leakage = 0.0f,
+        .leakage = 1e-5f,
         .limiter_thresh = 0.80f,
-        .soft_clamping = true
+        .dtd_threshold = 3.0f,
+        .soft_clamping = true,
+        .enable_dtd = true
     };
 
     nlms_filter_init(&filter, &config);
 
-    // Synthetic test:
-    // Speech s(n) = 0.4 * sin(2*pi*200*t)
-    // Ambient noise x(n) = 0.8 * sin(2*pi*50*t) + random
-    // Leaked noise into mic = 0.5 * x(n - 2)
-    // Desired mic input d(n) = s(n) + 0.5 * x(n - 2)
-
+    // Test: NLMS Convergence under noise
     float initial_err_power = 0.0f;
     float final_err_power = 0.0f;
-
     float prev_x[4] = {0};
 
     for (int n = 0; n < TEST_SAMPLES; ++n) {
         float t = (float)n / 16000.0f;
-        float speech = 0.4f * sinf(2.0f * PI * 200.0f * t);
-        float noise = 0.8f * sinf(2.0f * PI * 50.0f * t) + ((float)rand() / RAND_MAX - 0.5f) * 0.1f;
         
-        // Delay line for acoustic transfer
-        float leaked = 0.5f * prev_x[2];
+        // Speech active between 600..900 samples (Double-Talk burst)
+        float speech = 0.0f;
+        if (n >= 600 && n <= 900) {
+            speech = 0.7f * sinf(2.0f * PI * 200.0f * t); // Loud vocalization
+        } else if (n < 400) {
+            speech = 0.2f * sinf(2.0f * PI * 200.0f * t); // Low baseline speech
+        }
+        
+        float noise = 0.6f * sinf(2.0f * PI * 50.0f * t) + ((float)rand() / RAND_MAX - 0.5f) * 0.1f;
+        
+        // Acoustic leakage model
+        float leaked = 0.4f * prev_x[2];
         prev_x[3] = prev_x[2];
         prev_x[2] = prev_x[1];
         prev_x[1] = prev_x[0];
@@ -78,6 +82,7 @@ int main() {
     printf("NLMS Convergence    : %s (Noise Attenuation: %.2f dB)\n", 
            (final_err_power < initial_err_power) ? "PASSED" : "FAILED",
            attenuation_db);
+    printf("DTD Freeze Samples  : %u samples protected\n", filter.dtd_freeze_count);
 
     // Test Limiter on blast shock
     float shock_input = 2.5f;
@@ -85,8 +90,10 @@ int main() {
     printf("Acoustic Blast Test : Input %.2f -> Clamped %.4f (Limit: 0.80)\n", shock_input, shock_output);
 
     assert(shock_output <= 1.0f);
+    assert(shock_output >= -1.0f);
     assert(final_err_power < initial_err_power);
+    assert(filter.dtd_freeze_count > 0); // DTD must have triggered during double-talk burst
 
-    printf("\n>>> ALL C UNIT TESTS PASSED SUCCESSFULLY! <<<\n");
+    printf("\n>>> ALL C UNIT & DTD TESTS PASSED SUCCESSFULLY! <<<\n");
     return 0;
 }
