@@ -4,11 +4,12 @@
 > **Tagline:** *"Decoupled Throat-Acoustic Adaptive Noise Cancellation for Extreme Battlefield Environments"*
 
 <p align="center">
-  <img src="https://img.shields.io/badge/CI%2FCD-Passing-brightgreen?style=for-the-badge&logo=githubactions" alt="CI/CD Status">
-  <img src="https://img.shields.io/badge/Platform-ESP32%20%7C%20STM32-blue?style=for-the-badge&logo=espressif" alt="Hardware Platform">
-  <img src="https://img.shields.io/badge/Language-ANSI%20C%20%7C%20C%2B%2B%20%7C%20Python-orange?style=for-the-badge&logo=c" alt="Languages">
-  <img src="https://img.shields.io/badge/Simulated%20ERLE->24.90%20dB-success?style=for-the-badge" alt="ERLE Metric">
-  <img src="https://img.shields.io/badge/Block%20Latency-<4.0%20ms-purple?style=for-the-badge" alt="Latency">
+  <a href="https://github.com/gangasagar5928/NIRDHVANI/actions/workflows/ci.yml"><img src="https://github.com/gangasagar5928/NIRDHVANI/actions/workflows/ci.yml/badge.svg?branch=main" alt="NIRDHVANI CI/CD Pipeline"></a>
+  <a href="https://github.com/gangasagar5928/NIRDHVANI/actions/workflows/firmware_build.yml"><img src="https://github.com/gangasagar5928/NIRDHVANI/actions/workflows/firmware_build.yml/badge.svg?branch=main" alt="PlatformIO Firmware Build"></a>
+  <img src="https://img.shields.io/badge/Platform-ESP32%20%7C%20STM32-blue?logo=espressif" alt="Hardware Platform">
+  <img src="https://img.shields.io/badge/Language-ANSI%20C%20%7C%20C%2B%2B%20%7C%20Python-orange?logo=c" alt="Languages">
+  <img src="https://img.shields.io/badge/Simulated%20ERLE-27.76%20dB%20%2F%2025.56%20dB-success" alt="ERLE Metric">
+  <img src="https://img.shields.io/badge/Block%20Latency-%3C4.0%20ms-purple" alt="Latency">
 </p>
 
 ---
