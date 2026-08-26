@@ -115,12 +115,14 @@ static inline float tacanc_impulse_limiter(float sample, float threshold, bool s
 
     if (sample > threshold) {
         float excess = sample - threshold;
-        float headroom = 1.0f - threshold + 1e-6f;
-        return threshold + headroom * tanhf(excess / headroom);
+        float headroom = (threshold < 1.0f) ? (1.0f - threshold) : 0.0f;
+        float out = threshold + headroom * tanhf(excess / (headroom + 1e-6f));
+        return (out > 1.0f) ? 1.0f : out;
     } else if (sample < -threshold) {
         float excess = -sample - threshold;
-        float headroom = 1.0f - threshold + 1e-6f;
-        return -(threshold + headroom * tanhf(excess / headroom));
+        float headroom = (threshold < 1.0f) ? (1.0f - threshold) : 0.0f;
+        float out = -(threshold + headroom * tanhf(excess / (headroom + 1e-6f)));
+        return (out < -1.0f) ? -1.0f : out;
     }
     return sample;
 }

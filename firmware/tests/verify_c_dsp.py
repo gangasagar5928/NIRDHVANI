@@ -50,12 +50,12 @@ def run_test():
         # Soft limiter
         if e_n > limiter_thresh:
             excess = e_n - limiter_thresh
-            headroom = 1.0 - limiter_thresh + 1e-6
-            e_out = limiter_thresh + headroom * math.tanh(excess / headroom)
+            headroom = (1.0 - limiter_thresh) if limiter_thresh < 1.0 else 0.0
+            e_out = min(1.0, limiter_thresh + headroom * math.tanh(excess / (headroom + 1e-6)))
         elif e_n < -limiter_thresh:
             excess = -e_n - limiter_thresh
-            headroom = 1.0 - limiter_thresh + 1e-6
-            e_out = -(limiter_thresh + headroom * math.tanh(excess / headroom))
+            headroom = (1.0 - limiter_thresh) if limiter_thresh < 1.0 else 0.0
+            e_out = max(-1.0, -(limiter_thresh + headroom * math.tanh(excess / (headroom + 1e-6))))
         else:
             e_out = e_n
 
