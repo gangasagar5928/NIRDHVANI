@@ -36,8 +36,7 @@ jobs:
           cp firmware/esp32/main_esp32.cpp pio_build_env/src/
           cp firmware/src/nlms_filter.c pio_build_env/src/
           cp firmware/src/tinyml_anc.c pio_build_env/src/
-          cp firmware/include/nlms_filter.h pio_build_env/include/
-          cp firmware/include/tinyml_anc.h pio_build_env/include/
-          cp firmware/include/tinyml_weights.h pio_build_env/include/
+          cp firmware/include/*.h pio_build_env/include/
+          cp firmware/include/*.h pio_build_env/src/
           cp firmware/esp32/platformio.ini pio_build_env/
           cd pio_build_env && pio run
