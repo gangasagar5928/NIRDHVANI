@@ -4,7 +4,8 @@ Noise-Isolated Impulse-Resilient Real-Time Decoupled Hardware Voice Adaptive Net
 "Decoupled Throat-Acoustic Adaptive Noise Cancellation for Extreme Battlefield Environments"
 
 End-to-End Simulation & Verification Suite
-Simulates 120-140 dB SPL Tank Cockpit Noise, Throat Contact Sensor, NLMS ANC, and Blast Limiting.
+Simulates 120-140 dB SPL Tank Cockpit Noise, Throat Contact Sensor, NLMS ANC, Blast Limiting,
+and Real-World Hardware Non-Linear ADC / 8-bit DAC Quantization Effects.
 """
 
 import os
@@ -17,6 +18,42 @@ import matplotlib.pyplot as plt
 # Ensure local module import
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dsp_core import NLMSFilter, AcousticImpulseLimiter, calculate_erle, calculate_snr
+
+
+def model_hardware_adc_nonlinearity(audio_norm: np.ndarray, bits: int = 12, dnl_lsb: float = 1.8) -> np.ndarray:
+    """
+    Models real-world ESP32 SAR ADC non-linearities:
+    - Finite quantization bit depth (12-bit)
+    - Differential Non-Linearity (DNL) error distribution
+    - Sub-100mV lower dead zone and saturation compression
+    """
+    q_levels = 2 ** bits
+    scaled = (audio_norm + 1.0) * 0.5 * (q_levels - 1)
+    
+    # Add random DNL step distortion
+    dnl_error = np.random.normal(0, dnl_lsb, size=scaled.shape)
+    distorted = scaled + dnl_error
+    
+    # Non-linear S-curve compression near rails (ESP32 ADC behavior)
+    norm_mid = (distorted - (q_levels / 2)) / (q_levels / 2)
+    s_curved = np.tanh(norm_mid * 1.05)
+    
+    # Quantize
+    quantized = np.round((s_curved + 1.0) * 0.5 * (q_levels - 1))
+    quantized = np.clip(quantized, 0, q_levels - 1)
+    
+    # Reconvert to normalized [-1.0, +1.0]
+    out_norm = (quantized / (q_levels - 1)) * 2.0 - 1.0
+    return out_norm
+
+
+def model_hardware_dac_quantization(audio_norm: np.ndarray, bits: int = 8) -> np.ndarray:
+    """Models 8-bit DAC output quantization and reconstruction."""
+    q_levels = 2 ** bits
+    scaled = (audio_norm + 1.0) * 0.5 * (q_levels - 1)
+    quantized = np.round(np.clip(scaled, 0, q_levels - 1))
+    out_norm = (quantized / (q_levels - 1)) * 2.0 - 1.0
+    return out_norm
 
 
 def generate_synthetic_throat_speech(fs: int, duration_sec: float) -> np.ndarray:
@@ -119,7 +156,7 @@ def inject_artillery_blast_impulses(
 
 
 def run_simulation():
-    """Run full DRDO TacANC-Comm verification pipeline."""
+    """Run full NIRDHVANI verification pipeline."""
     output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
     os.makedirs(output_dir, exist_ok=True)
 
@@ -127,8 +164,8 @@ def run_simulation():
     duration = 6.0  # 6 seconds
 
     print("================================================================")
-    print("  NIRDHVANI: Simulation & DSP Benchmark Suite                   ")
-    print("  'Decoupled Throat-Acoustic ANC for Extreme Battlefield'       ")
+    print("  NIRDHVANI: Tactical Acoustic DSP Simulation & Benchmark Suite ")
+    print("  [Simulated 120-140 dB SPL Tank Cockpit + Hardware ADC Modeling]")
     print("================================================================")
     print(f"Sampling Frequency : {fs} Hz")
     print(f"Duration           : {duration} s ({int(fs * duration)} samples)")
@@ -142,40 +179,51 @@ def run_simulation():
     ambient_noise_ref = inject_artillery_blast_impulses(ambient_noise_ref, fs, [2.0, 4.5])
 
     # 3. Model acoustic leakage path H(z) from ambient cockpit into throat neckband
-    # FIR acoustic transfer function (delays, structural resonances)
     acoustic_path = np.array([0.05, 0.12, -0.25, 0.35, 0.18, -0.09, 0.04, -0.02, 0.01])
     leaked_noise_into_piezo = signal.lfilter(acoustic_path, [1.0], ambient_noise_ref)
 
     # 4. Composite throat sensor signal d(n) = speech + leaked chassis noise
-    d_throat = clean_speech + leaked_noise_into_piezo
-    x_ambient = ambient_noise_ref
+    d_throat_raw = clean_speech + leaked_noise_into_piezo
+    x_ambient_raw = ambient_noise_ref
 
-    # 5. Initialize Adaptive NLMS Filter & Limiter
+    # 5. Apply Hardware ADC Non-Linearity & Quantization Modeling (12-bit SAR ADC with DNL)
+    d_throat_adc = model_hardware_adc_nonlinearity(d_throat_raw, bits=12, dnl_lsb=1.8)
+    x_ambient_adc = model_hardware_adc_nonlinearity(x_ambient_raw, bits=12, dnl_lsb=1.8)
+
+    # 6. Initialize Adaptive NLMS Filter & Limiter
     num_taps = 64
     mu = 0.30
     epsilon = 1e-4
-    nlms = NLMSFilter(num_taps=num_taps, mu=mu, epsilon=epsilon, leakage=1e-5)
+    nlms_ideal = NLMSFilter(num_taps=num_taps, mu=mu, epsilon=epsilon, leakage=1e-5)
+    nlms_hw = NLMSFilter(num_taps=num_taps, mu=mu, epsilon=epsilon, leakage=1e-5)
     limiter = AcousticImpulseLimiter(threshold=0.75, soft_knee=True)
 
-    print(f"\n[DSP] Executing NLMS Filter (Taps={num_taps}, mu={mu}, eps={epsilon})...")
-    e_nlms, y_est, weight_norms = nlms.filter_stream(d_throat, x_ambient)
+    # Process Ideal Floating Point Path
+    e_nlms_ideal, _, _ = nlms_ideal.filter_stream(d_throat_raw, x_ambient_raw)
+    e_ideal_final = limiter.process_stream(e_nlms_ideal)
 
-    # 6. Apply Hearing Protection Impulse Limiter
-    print("[DSP] Applying Soft-Knee Acoustic Impulse Limiter...")
-    e_final = limiter.process_stream(e_nlms)
+    # Process Real-World Hardware Path (ADC Non-Linearity + 8-bit DAC Quantization)
+    e_nlms_hw, _, weight_norms = nlms_hw.filter_stream(d_throat_adc, x_ambient_adc)
+    e_hw_limited = limiter.process_stream(e_nlms_hw)
+    e_hw_final = model_hardware_dac_quantization(e_hw_limited, bits=8)
 
     # 7. Metrics & Analysis
-    erle_db = calculate_erle(d_throat[0:int(0.5 * fs)], e_final[0:int(0.5 * fs)])
-    snr_in = calculate_snr(clean_speech, d_throat)
-    snr_out = calculate_snr(clean_speech, e_final)
-    snr_gain = snr_out - snr_in
+    erle_ideal = calculate_erle(d_throat_raw[0:int(0.5 * fs)], e_ideal_final[0:int(0.5 * fs)])
+    erle_hw = calculate_erle(d_throat_adc[0:int(0.5 * fs)], e_hw_final[0:int(0.5 * fs)])
+    
+    snr_in_raw = calculate_snr(clean_speech, d_throat_raw)
+    snr_out_ideal = calculate_snr(clean_speech, e_ideal_final)
+    snr_out_hw = calculate_snr(clean_speech, e_hw_final)
 
     print("\n---------------- Performance Summary ----------------")
-    print(f"Raw Throat Input SNR      : {snr_in:.2f} dB")
-    print(f"Processed Output SNR      : {snr_out:.2f} dB")
-    print(f"Total SNR Improvement     : +{snr_gain:.2f} dB")
-    print(f"Initial ERLE (Noise Red.) : {erle_db:.2f} dB")
+    print(f"Raw Throat Input SNR               : {snr_in_raw:.2f} dB")
+    print(f"Ideal Simulation Output SNR        : {snr_out_ideal:.2f} dB (Gain: +{snr_out_ideal - snr_in_raw:.2f} dB)")
+    print(f"Ideal Simulation ERLE (Noise Red.) : {erle_ideal:.2f} dB")
+    print(f"Hardware-Modeled Output SNR (8-bit): {snr_out_hw:.2f} dB (Gain: +{snr_out_hw - snr_in_raw:.2f} dB)")
+    print(f"Hardware-Modeled ERLE (12b ADC/8b) : {erle_hw:.2f} dB")
     print("-----------------------------------------------------")
+    print("NOTE: Figures are simulation benchmarks (with hardware non-linearity modeling).")
+    print("      Physical chamber validation on hardware prototype currently in progress.")
 
     # 8. Save Audio Files
     def save_wav(filename, data):
@@ -185,9 +233,9 @@ def run_simulation():
         return filepath
 
     f_clean = save_wav("1_clean_throat_speech.wav", clean_speech)
-    f_ambient = save_wav("2_ambient_cockpit_noise.wav", x_ambient)
-    f_raw = save_wav("3_raw_throat_mixed_input.wav", d_throat)
-    f_filtered = save_wav("4_processed_anc_output.wav", e_final)
+    f_ambient = save_wav("2_ambient_cockpit_noise.wav", x_ambient_raw)
+    f_raw = save_wav("3_raw_throat_mixed_input.wav", d_throat_raw)
+    f_filtered = save_wav("4_processed_anc_output.wav", e_hw_final)
 
     print(f"\n[Audio Files Saved]")
     print(f"  - Clean Speech : {f_clean}")
@@ -201,21 +249,21 @@ def run_simulation():
 
     # Waveform comparisons
     plt.subplot(4, 1, 1)
-    plt.plot(time_axis, d_throat, color='orange', alpha=0.8, label='Raw Throat Sensor d(n) [Speech + Leaked 120dB Noise]')
+    plt.plot(time_axis, d_throat_raw, color='orange', alpha=0.8, label='Raw Throat Sensor d(n) [Speech + Leaked 120dB Noise]')
     plt.plot(time_axis, clean_speech, color='blue', alpha=0.5, label='Clean Vocal Cord Reference')
-    plt.title("NIRDHVANI Signal Processing Pipeline", fontsize=13, fontweight='bold')
+    plt.title("NIRDHVANI Signal Processing Pipeline [Simulation Benchmark]", fontsize=13, fontweight='bold')
     plt.ylabel("Amplitude")
     plt.legend(loc='upper right')
     plt.grid(True, alpha=0.3)
 
     plt.subplot(4, 1, 2)
-    plt.plot(time_axis, x_ambient, color='red', alpha=0.7, label='Ambient Reference Mic x(n) [Tank Engine + Blast Spikes]')
+    plt.plot(time_axis, x_ambient_raw, color='red', alpha=0.7, label='Ambient Reference Mic x(n) [Tank Engine + Blast Spikes]')
     plt.ylabel("Amplitude")
     plt.legend(loc='upper right')
     plt.grid(True, alpha=0.3)
 
     plt.subplot(4, 1, 3)
-    plt.plot(time_axis, e_final, color='green', label=f'Processed Clean Audio e(n) [NLMS + Limiter] (SNR Gain: +{snr_gain:.1f} dB)')
+    plt.plot(time_axis, e_hw_final, color='green', label=f'Processed Audio e(n) [NLMS + Limiter + HW Quantization] (ERLE: {erle_hw:.1f} dB)')
     plt.ylabel("Amplitude")
     plt.legend(loc='upper right')
     plt.grid(True, alpha=0.3)
@@ -242,10 +290,13 @@ def run_simulation():
         rf.write(f"NLMS Taps: {num_taps}\n")
         rf.write(f"Learning Rate (mu): {mu}\n")
         rf.write(f"Regularizer (epsilon): {epsilon}\n")
-        rf.write(f"Raw Input SNR: {snr_in:.2f} dB\n")
-        rf.write(f"Processed Output SNR: {snr_out:.2f} dB\n")
-        rf.write(f"SNR Gain: +{snr_gain:.2f} dB\n")
-        rf.write(f"Noise Attenuation (ERLE): {erle_db:.2f} dB\n")
+        rf.write(f"Raw Input SNR: {snr_in_raw:.2f} dB\n")
+        rf.write(f"Ideal Simulation Output SNR: {snr_out_ideal:.2f} dB\n")
+        rf.write(f"Ideal Simulation ERLE: {erle_ideal:.2f} dB\n")
+        rf.write(f"Hardware-Modeled Output SNR: {snr_out_hw:.2f} dB\n")
+        rf.write(f"Hardware-Modeled ERLE: {erle_hw:.2f} dB\n")
+        rf.write("\nStatus: Simulation benchmark verified with non-linear ADC modeling.\n")
+        rf.write("Physical hardware acoustic chamber testing in progress.\n")
     print(f"[Benchmark Report Saved] -> {report_path}")
 
 
