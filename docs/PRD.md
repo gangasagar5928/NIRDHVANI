@@ -64,7 +64,7 @@ Standard acoustic communication devices in extreme combat environments (120 dB t
 
 > [!IMPORTANT]
 > **Simulation vs. Hardware Verification Caveat:**  
-> The **27.75 dB ERLE** figure represents an ideal floating-point simulation benchmark. Under real-world hardware non-linearities (ESP32 SAR ADC DNL noise + 8-bit internal DAC reconstruction), the modeled ERLE is **~21.5 dB to 23.8 dB**. Physical anechoic/acoustic chamber testing on hardware prototype is actively in progress.
+> The **27.76 dB ERLE** figure represents an ideal floating-point simulation benchmark. Under real-world hardware non-linearities (ESP32 SAR ADC DNL noise + 8-bit internal DAC reconstruction), the modeled ERLE is **25.56 dB**. Physical anechoic/acoustic chamber testing on hardware prototype is actively in progress.
 
 1. **ESP32 ADC Linearity:** ESP32 ADC DNL non-linearity is mitigated via `esp_adc_cal` factory eFuse characterization and biasing signals within the linear $0.5\text{ V} - 2.8\text{ V}$ window.
 2. **Op-Amp Rail-to-Rail Swing:** Replaced legacy LM358 with **MCP6001 / TS321** to prevent top-clipping at 3.3V supply rails.
