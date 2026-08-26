@@ -40,15 +40,19 @@ Standard acoustic communication devices in extreme combat environments (120 dB t
 
 ## 3. Functional Requirements (FR)
 
-### FR-1: Decoupled Acquisition & Analog Conditioning
-- **Channel 0 (Speech / Desired signal $d(n)$):** Sample piezo contact transducer buffered through MCP6001 / TS321 non-inverting voltage follower with $10\text{ M}\Omega$ input resistance, $0.1\mu\text{F}$ AC coupling, and $1.65\text{ V}$ virtual ground bias.
+### FR-1: Decoupled Acquisition, BAT54S Overvoltage Clamping & Analog Conditioning
+- **Channel 0 (Speech / Desired signal $d(n)$):** Sample piezo contact transducer buffered through MCP6001 / TS321 non-inverting voltage follower with $10\text{ M}\Omega$ input resistance, $0.1\mu\text{F}$ AC coupling, BAT54S dual Schottky transient overvoltage clamping diodes ($-0.3\text{V} \le V_{\text{in}} \le 3.6\text{V}$), and $1.65\text{ V}$ virtual ground bias.
 - **Channel 1 (Noise Reference $x(n)$):** Sample electret microphone with adjustable pre-amp gain.
-- **Sampling Parameters:** Synchronous dual ADC sampling at $f_s = 16\text{ kHz}$ with eFuse piecewise calibration, processed in 64-sample ping-pong blocks ($4.0\text{ ms}$ algorithmic latency).
+- **Sampling Parameters:** 16.0 kHz Interleaved Sequential Dual ADC Sampling (ADC1_CH6 + ADC1_CH7 with <2µs channel skew) with eFuse piecewise calibration, processed in 64-sample ping-pong blocks ($4.0\text{ ms}$ algorithmic latency).
 
-### FR-2: NLMS Adaptive Noise Cancellation Core
-- **Filter Model:** 64-tap adaptive FIR filter with regularized normalized step size:
-  $$\mathbf{w}(n+1) = (1 - \gamma \mu)\mathbf{w}(n) + \frac{\mu}{\epsilon + \|\mathbf{x}(n)\|^2} e(n) \mathbf{x}(n)$$
-- **Target Performance:** $> 20\text{ dB}$ noise attenuation under simulated 120 dB SPL armored vehicle acoustic field.
+### FR-2: TinyML Neural Controller & NLMS Adaptive Filter Core
+- **TinyML Controller:** 2-Layer Neural Network (8 -> 16 -> 5) inferring dynamic step-size $\mu(n) \in [0.02, 0.45]$, double-talk probability $p_{\text{DTD}}$, blast shock freeze trigger, and noise environment scene class (`STATIONARY`, `NON_STATIONARY`, `IMPULSIVE`).
+- **Adaptive Filter Model:** 64-tap adaptive FIR filter with neural step control and blast-shock error weight freezing:
+  $$\mathbf{w}(n+1) = \begin{cases} 
+  \mathbf{w}(n), & \text{if } p_{\text{DTD}} > 0.65 \text{ or } |e(n)| > 0.85 \\
+  (1 - \gamma \mu_{\text{ML}})\mathbf{w}(n) + \frac{\mu_{\text{ML}}}{\epsilon + \|\mathbf{x}(n)\|^2} e(n) \mathbf{x}(n), & \text{otherwise}
+  \end{cases}$$
+- **Target Performance:** $> 25\text{ dB}$ noise attenuation on stationary engine noise, $> 19\text{ dB}$ on track noise, $> 20\text{ dB}$ blast peak clamping, maintaining STOI $> 0.85$ and PESQ MOS $> 3.80$.
 
 ### FR-3: Acoustic Impulse Limiter (Blast Protection)
 - Detect sample amplitude $|e(n)| > V_{\text{th}}$ ($85\text{ dBA}$ SPL equivalent).

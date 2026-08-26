@@ -102,8 +102,8 @@ You do **not** need expensive lab equipment. Everything can be bought online fro
 
 ---
 
-### Step 2: Building the MCP6001 / Rail-to-Rail Buffer Circuit
-Place the **MCP6001 / TS321 IC** (or LM358) onto your perfboard:
+### Step 2: Building the MCP6001 / Rail-to-Rail Buffer & Protection Circuit
+Place the **MCP6001 / TS321 IC** onto your perfboard:
 
 ```
                +3.3V (Clean Analog Rail)
@@ -115,27 +115,36 @@ Place the **MCP6001 / TS321 IC** (or LM358) onto your perfboard:
                  |     |
                 GND   GND
                        |
-   PIEZO (+) ----------+---[ C_IN: 0.1uF ]----+
-   (Throat Disc)                              |
-                                            [ R_IN: 10M ]
-   PIEZO (-) ----------- GND                  |
-                                            V_BIAS (1.65V)
-                                              |
-                                              v
-                                         |\
-                                         | \  MCP6001 / TS321 (RRIO)
-                            Non-Inv (+)  |  \
-                     ------------------->|   \
-                                         |    \________ Output ------> ESP32 GPIO34 (ADC1_CH6)
-                                    +--->|    /
-                                    |    |   /
-                                    +----+--+ (Unity Gain Feedback)
+                       |       +3.3V_ANA
+                       |           |
+                       |         [▲] D1 (BAT54S Schottky)
+                       |           |
+   PIEZO (+) ----------+---[ C_IN: 0.1uF ]---[ 1kΩ Resistor ]---+
+   (Throat Disc)                                               |
+                                                             [▼] D2
+                                                               |
+                                                              GND
+                                                               |
+                                                            [ R_IN: 10M ]
+   PIEZO (-) ----------- GND                                   |
+                                                             V_BIAS (1.65V)
+                                                               |
+                                                               v
+                                                          |\
+                                                          | \  MCP6001 / TS321 (RRIO)
+                                             Non-Inv (+)  |  \
+                                      ------------------->|   \
+                                                          |    \________ Output ------> ESP32 GPIO34 (ADC1_CH6)
+                                                     +--->|    /
+                                                     |    |   /
+                                                     +----+--+ (Unity Gain Feedback)
 ```
 
 1. **Power:** Connect VCC to ESP32 `3V3` and GND to ESP32 `GND`.
 2. **Virtual Ground:** Split 3.3V using two 100kΩ resistors with a 10µF capacitor to make a rock-solid 1.65V center reference.
-3. **High-Z Input:** Bias the non-inverting input through a 10MΩ resistor connected to the 1.65V reference. Connect the piezo disc through a 0.1µF DC decoupling capacitor.
-4. **Buffer Output:** Tie inverting input to output for unity gain; feed output into ESP32 `GPIO34`.
+3. **Overvoltage Clamping:** BAT54S dual diodes clamp any harsh physical shock on the piezo disc to safe voltages before reaching the chip.
+4. **High-Z Input:** Bias the non-inverting input through a 10MΩ resistor connected to the 1.65V reference. Connect the piezo disc through a 0.1µF DC decoupling capacitor.
+5. **Buffer Output:** Tie inverting input to output for unity gain; feed output into ESP32 `GPIO34`.
 
 ---
 
