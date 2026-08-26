@@ -8,6 +8,18 @@
 
 ---
 
+## 📸 System Hardware Architecture & Prototype
+
+<p align="center">
+  <img src="docs/assets/nirdhvani_3d_prototype_view.jpg" alt="NIRDHVANI 3D Real-Time Prototype View" width="850">
+</p>
+
+<p align="center">
+  <img src="docs/assets/nirdhvani_exploded_hardware_architecture.jpg" alt="NIRDHVANI Exploded Mil-Spec Hardware Layer Architecture" width="850">
+</p>
+
+---
+
 ## 🎯 1. Project Overview & Problem Statement
 In extreme military acoustic environments (120 dB to 140 dB SPL inside main battle tanks like Arjun/T-90, BMP-II ICVs, artillery positions, and low-altitude rotary-wing aircraft), conventional airborne microphones suffer from immediate acoustic overload, clipping speech signals into unintelligible distortion. Software-only frequency filters introduce phase delays (>30ms) and eliminate natural vocal formants.
 

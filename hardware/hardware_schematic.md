@@ -3,7 +3,15 @@
 > *(Sanskrit for "Silence / Noise-Free" — Defence Signal Processing)*  
 > **Tagline:** *"Decoupled Throat-Acoustic Adaptive Noise Cancellation for Extreme Battlefield Environments"*
 
-## 1. Electrical Architecture Overview
+## 1. Electrical & Physical Architecture Overview
+
+<p align="center">
+  <img src="../docs/assets/nirdhvani_3d_prototype_view.jpg" alt="NIRDHVANI 3D Real-Time Onboard Prototype View" width="850">
+</p>
+
+<p align="center">
+  <img src="../docs/assets/nirdhvani_exploded_hardware_architecture.jpg" alt="NIRDHVANI Exploded Mil-Spec Hardware Layer Architecture" width="850">
+</p>
 
 ```
 +-----------------------------------------------------------------------------------+

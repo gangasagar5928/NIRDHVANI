@@ -23,6 +23,10 @@ Standard acoustic communication devices in extreme combat environments (120 dB t
 
 ## 2. System Architecture & Component Mapping
 
+<p align="center">
+  <img src="assets/nirdhvani_exploded_hardware_architecture.jpg" alt="NIRDHVANI Exploded Mil-Spec Hardware Architecture" width="850">
+</p>
+
 | Module | Hackathon Prototype Part (Student Budget) | Production Component (Industrial Scale) | Function / Purpose |
 | :--- | :--- | :--- | :--- |
 | **Compute Core** | ESP32-WROOM-32 / STM32F401 Black Pill | STM32H723 ARM Cortex-M7 @ 550MHz / ADAU1467 DSP | Dual-channel synchronous ADC sampling, NLMS DSP execution |
