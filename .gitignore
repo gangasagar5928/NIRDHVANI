@@ -29,3 +29,8 @@ venv/
 .idea/
 *.swp
 *.bak
+
+# Local Team Practice Manuals (Not for GitHub)
+*.docx
+docs/*MANUAL*.md
+scripts/generate_master_manual_docx.py
