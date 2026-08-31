@@ -34,3 +34,11 @@ venv/
 *.docx
 docs/*MANUAL*.md
 scripts/
+
+# Dataset & Output Binaries
+ai/data/
+simulation/output/*.wav
+simulation/output/*.png
+checkpoints/*.pth
+checkpoints/*.onnx
+checkpoints/*.npz
