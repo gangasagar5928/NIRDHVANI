@@ -182,18 +182,36 @@ def calculate_snr(clean_speech: np.ndarray, noisy_signal: np.ndarray) -> float:
     return float(10.0 * np.log10((speech_power + 1e-12) / (noise_power + 1e-12)))
 
 
+try:
+    from pystoi import stoi as pystoi_stoi
+    PYSTOI_AVAILABLE = True
+except ImportError:
+    PYSTOI_AVAILABLE = False
+
+try:
+    from pesq import pesq as pypesq_pesq
+    PESQ_AVAILABLE = True
+except ImportError:
+    PESQ_AVAILABLE = False
+
+
 def calculate_stoi_proxy(clean_speech: np.ndarray, proc_speech: np.ndarray, fs: int = 16000) -> float:
     """
     Computes Short-Time Objective Intelligibility (STOI) score in [0.0, 1.0].
-    Based on 1/3-octave band correlation across short-time temporal envelopes (Taal et al. 2011).
+    Uses pystoi (Taal et al. 2011) when available, with proxy fallback.
     """
+    n_samples = min(len(clean_speech), len(proc_speech))
+    clean = np.asarray(clean_speech[:n_samples], dtype=np.float64)
+    proc = np.asarray(proc_speech[:n_samples], dtype=np.float64)
+
+    if PYSTOI_AVAILABLE:
+        try:
+            return float(pystoi_stoi(clean, proc, fs, extended=False))
+        except Exception:
+            pass
+
     frame_len = int(0.03 * fs)  # 30 ms frames
     hop_len = int(0.015 * fs)   # 15 ms hop
-    
-    n_samples = min(len(clean_speech), len(proc_speech))
-    clean = clean_speech[:n_samples]
-    proc = proc_speech[:n_samples]
-
     corrs = []
     for start in range(0, n_samples - frame_len, hop_len):
         c_win = clean[start:start + frame_len]
@@ -217,9 +235,23 @@ def calculate_stoi_proxy(clean_speech: np.ndarray, proc_speech: np.ndarray, fs: 
 
 def calculate_pesq_proxy(clean_speech: np.ndarray, proc_speech: np.ndarray, fs: int = 16000) -> float:
     """
-    Computes PESQ (Perceptual Evaluation of Speech Quality) MOS proxy in [1.0, 4.5].
-    Evaluates spectral distortion and disturbance density.
+    Computes PESQ (Perceptual Evaluation of Speech Quality) MOS score in [1.0, 4.5].
+    Uses ITU-T P.862 wideband PESQ when available, with proxy fallback.
     """
+    n_samples = min(len(clean_speech), len(proc_speech))
+    clean = np.asarray(clean_speech[:n_samples], dtype=np.float64)
+    proc = np.asarray(proc_speech[:n_samples], dtype=np.float64)
+
+    if PESQ_AVAILABLE:
+        try:
+            # PESQ requires 16000 Hz or 8000 Hz
+            target_fs = 16000 if fs >= 16000 else 8000
+            mode = 'wb' if target_fs == 16000 else 'nb'
+            score = pypesq_pesq(target_fs, clean, proc, mode)
+            return float(np.clip(score, 1.0, 4.5))
+        except Exception:
+            pass
+
     stoi = calculate_stoi_proxy(clean_speech, proc_speech, fs)
     snr = calculate_snr(clean_speech, proc_speech)
     

@@ -26,9 +26,67 @@ if TORCH_AVAILABLE:
     from model_dpcrn import DPCRNSpeechEnhancer
 
 
+class DPCRNNeuralCore(torch.nn.Module if TORCH_AVAILABLE else object):
+    """
+    Sub-band Neural Core Module for ONNX & TensorRT Edge Deployment.
+    Accepts 2-channel Real and Imaginary STFT Spectrograms and predicts Complex Ideal Ratio Mask (cIRM).
+    Inputs:
+        in_r: [Batch, 2, Frames, 257] (Real STFT of Primary Speech + Reference Noise)
+        in_i: [Batch, 2, Frames, 257] (Imag STFT of Primary Speech + Reference Noise)
+    Outputs:
+        mask_r: [Batch, Frames, 257] (Real cIRM Mask)
+        mask_i: [Batch, Frames, 257] (Imag cIRM Mask)
+    """
+    def __init__(self, model):
+        super().__init__()
+        self.enc1 = model.enc1
+        self.enc2 = model.enc2
+        self.enc3 = model.enc3
+        self.enc4 = model.enc4
+        self.rnn_r = model.rnn_r
+        self.rnn_i = model.rnn_i
+        self.dec4 = model.dec4
+        self.dec3 = model.dec3
+        self.dec2 = model.dec2
+        self.dec1 = model.dec1
+        self.mask_conv_r = model.mask_conv_r
+        self.mask_conv_i = model.mask_conv_i
+        self.mask_bound_k = model.mask_bound_k
+        self.mask_beta = model.mask_beta
+
+    def forward(self, in_r, in_i):
+        e1_r, e1_i = self.enc1(in_r, in_i)
+        e2_r, e2_i = self.enc2(e1_r, e1_i)
+        e3_r, e3_i = self.enc3(e2_r, e2_i)
+        e4_r, e4_i = self.enc4(e3_r, e3_i)
+
+        B_s, C_s, T_s, F_s = e4_r.shape
+        rnn_in_r = e4_r.permute(0, 2, 1, 3).reshape(B_s, T_s, C_s * F_s)
+        rnn_in_i = e4_i.permute(0, 2, 1, 3).reshape(B_s, T_s, C_s * F_s)
+
+        rnn_out_r, _ = self.rnn_r(rnn_in_r)
+        rnn_out_i, _ = self.rnn_i(rnn_in_i)
+
+        r_feat = rnn_out_r.reshape(B_s, T_s, C_s, F_s).permute(0, 2, 1, 3)
+        i_feat = rnn_out_i.reshape(B_s, T_s, C_s, F_s).permute(0, 2, 1, 3)
+
+        d4_r, d4_i = self.dec4(torch.cat([r_feat, e4_r], dim=1), torch.cat([i_feat, e4_i], dim=1))
+        d3_r, d3_i = self.dec3(torch.cat([d4_r, e3_r], dim=1), torch.cat([d4_i, e3_i], dim=1))
+        d2_r, d2_i = self.dec2(torch.cat([d3_r, e2_r], dim=1), torch.cat([d3_i, e2_i], dim=1))
+        d1_r, d1_i = self.dec1(torch.cat([d2_r, e1_r], dim=1), torch.cat([d2_i, e1_i], dim=1))
+
+        m_r_raw = self.mask_conv_r(d1_r)
+        m_i_raw = self.mask_conv_i(d1_i)
+
+        mask_r = self.mask_bound_k * torch.tanh(self.mask_beta * m_r_raw)
+        mask_i = self.mask_bound_k * torch.tanh(self.mask_beta * m_i_raw)
+
+        return mask_r.squeeze(1), mask_i.squeeze(1)
+
+
 def export_to_onnx(model_path="checkpoints/best_model.pth", onnx_path="checkpoints/nirdhvani_dpcrn.onnx"):
     """
-    Exports trained PyTorch model to ONNX graph.
+    Exports trained PyTorch DPCRN Neural Core to ONNX graph.
     """
     if not TORCH_AVAILABLE:
         print("[ONNX Export] PyTorch not available. Generating simulated ONNX metadata...")
@@ -36,38 +94,42 @@ def export_to_onnx(model_path="checkpoints/best_model.pth", onnx_path="checkpoin
         return
 
     device = torch.device("cpu")
-    model = DPCRNSpeechEnhancer().to(device)
+    base_model = DPCRNSpeechEnhancer().to(device)
     if os.path.exists(model_path):
         ckpt = torch.load(model_path, map_location=device)
-        model.load_state_dict(ckpt["model_state_dict"])
-        print(f"[ONNX Export] Loaded checkpoint from {model_path}")
+        base_model.load_state_dict(ckpt["model_state_dict"])
+        print(f"[ONNX Export] Loaded trained weights from {model_path}")
         
-    model.eval()
+    base_model.eval()
+    core_model = DPCRNNeuralCore(base_model).to(device)
+    core_model.eval()
     
-    # Dummy input waveforms (1 sec at 16 kHz)
-    dummy_d = torch.randn(1, 16000, device=device)
-    dummy_x = torch.randn(1, 16000, device=device)
+    # Dummy STFT input spectrograms: [Batch=1, Channels=2, Frames=63, Freq=257] (1 sec audio)
+    dummy_in_r = torch.randn(1, 2, 63, 257, device=device)
+    dummy_in_i = torch.randn(1, 2, 63, 257, device=device)
 
-    print(f"[ONNX Export] Exporting model to: {onnx_path}...")
+    print(f"[ONNX Export] Exporting Neural Core to: {onnx_path}...")
     torch.onnx.export(
-        model,
-        (dummy_d, dummy_x),
+        core_model,
+        (dummy_in_r, dummy_in_i),
         onnx_path,
         export_params=True,
-        opset_version=14,
+        opset_version=17,
         do_constant_folding=True,
-        input_names=["primary_speech_audio", "reference_noise_audio"],
-        output_names=["enhanced_speech_audio", "cirm_mask_real", "cirm_mask_imag"],
+        dynamo=False,
+        input_names=["stft_features_real", "stft_features_imag"],
+        output_names=["cirm_mask_real", "cirm_mask_imag"],
         dynamic_axes={
-            "primary_speech_audio": {0: "batch_size", 1: "time_samples"},
-            "reference_noise_audio": {0: "batch_size", 1: "time_samples"},
-            "enhanced_speech_audio": {0: "batch_size", 1: "time_samples"}
+            "stft_features_real": {0: "batch_size", 2: "num_frames"},
+            "stft_features_imag": {0: "batch_size", 2: "num_frames"},
+            "cirm_mask_real": {0: "batch_size", 1: "num_frames"},
+            "cirm_mask_imag": {0: "batch_size", 1: "num_frames"}
         }
     )
-    print(f"[ONNX Export] Successfully exported ONNX graph to: {onnx_path}")
+    print(f"[ONNX Export] Successfully exported ONNX graph to: {onnx_path} ({os.path.getsize(onnx_path)/1024:.1f} KB)")
 
 
-def apply_int8_quantization(model_path="checkpoints/best_model.pth", quant_path="checkpoints/nirdhvani_int8.pth"):
+def apply_int8_quantization(model_path="checkpoints/best_model.pth", quant_path="checkpoints/nirdhvani_int8.pth", onnx_path="checkpoints/nirdhvani_dpcrn.onnx"):
     """
     Applies INT8 Dynamic Quantization to linear and recurrent layers.
     """
@@ -82,7 +144,6 @@ def apply_int8_quantization(model_path="checkpoints/best_model.pth", quant_path=
         }
         with open("checkpoints/quantization_report.json", "w") as f:
             json.dump(report, f, indent=2)
-        print("[INT8 Quantization] Saved quantization report to: checkpoints/quantization_report.json")
         return report
 
     device = torch.device("cpu")
@@ -100,8 +161,22 @@ def apply_int8_quantization(model_path="checkpoints/best_model.pth", quant_path=
     
     fp32_size = os.path.getsize(model_path) / (1024 * 1024) if os.path.exists(model_path) else 2.45
     int8_size = os.path.getsize(quant_path) / (1024 * 1024) if os.path.exists(quant_path) else 0.62
+    compression = fp32_size / max(int8_size, 0.01)
     
-    print(f"[INT8 Quantization] Original Float32: {fp32_size:.2f} MB | Quantized INT8: {int8_size:.2f} MB ({fp32_size/int8_size:.2f}x compression)")
+    report = {
+        "float32_checkpoint_mb": round(fp32_size, 2),
+        "int8_quantized_mb": round(int8_size, 2),
+        "onnx_model_kb": round(os.path.getsize(onnx_path) / 1024, 2) if os.path.exists(onnx_path) else 0.0,
+        "compression_ratio": f"{compression:.2f}x",
+        "quantization_type": "INT8 Dynamic (Linear + Dual-Path GRU)",
+        "edge_ready": True
+    }
+    with open("checkpoints/quantization_report.json", "w") as f:
+        json.dump(report, f, indent=2)
+    
+    print(f"[INT8 Quantization] FP32 Checkpoint: {fp32_size:.2f} MB | INT8 Quantized: {int8_size:.2f} MB ({compression:.2f}x compression)")
+    print(f"[INT8 Quantization] Report saved to checkpoints/quantization_report.json")
+    return report
 
 
 def apply_weight_pruning(model, sparsity=0.30):
@@ -144,7 +219,7 @@ def benchmark_edge_latency():
 def generate_simulated_onnx_metadata(onnx_path):
     os.makedirs(os.path.dirname(onnx_path), exist_ok=True)
     with open(onnx_path, "wb") as f:
-        f.write(b"NIRDHVANI_DPCRN_ONNX_MODEL_BINARY_STUB_OPSET14")
+        f.write(b"NIRDHVANI_DPCRN_ONNX_MODEL_BINARY_STUB_OPSET17")
     print(f"[ONNX Export] Generated ONNX graph export stub at: {onnx_path}")
 
 
@@ -159,3 +234,4 @@ if __name__ == "__main__":
     export_to_onnx()
     apply_int8_quantization()
     benchmark_edge_latency()
+

@@ -1,0 +1,8 @@
+{
+  "float32_checkpoint_mb": 256.29,
+  "int8_quantized_mb": 22.16,
+  "onnx_model_kb": 87473.63,
+  "compression_ratio": "11.57x",
+  "quantization_type": "INT8 Dynamic (Linear + Dual-Path GRU)",
+  "edge_ready": true
+}

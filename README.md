@@ -123,8 +123,8 @@ To ensure transparent defence engineering, the table below documents the archite
 - **Optimization:** AdamW optimizer with Cosine Annealing learning rate schedule.
 
 ### 3.4 Model Optimization, ONNX Export & INT8 Quantization (`ai/export_onnx_quant.py`)
-- **ONNX Graph Export:** Standard Opset-14 ONNX export with dynamic batch and sequence axes (`checkpoints/nirdhvani_dpcrn.onnx`).
-- **INT8 Quantization:** $3.95\times$ model compression, reducing memory footprint from $2.45\text{ MB}$ to $0.62\text{ MB}$.
+- **ONNX Graph Export:** Standard Opset-17 ONNX export with dynamic sequence axes (`checkpoints/nirdhvani_dpcrn.onnx` — **87.47 MB**).
+- **INT8 Dynamic Quantization:** **11.57x** model compression, reducing memory footprint from **256.29 MB** to **22.16 MB** (`checkpoints/nirdhvani_int8.pth`).
 - **Multi-Platform Edge Latency:**
   - **NVIDIA Jetson AGX Orin (64GB):** **0.32 ms** per 4ms frame (RTF: 0.08x).
   - **NVIDIA Jetson Xavier NX:** **0.68 ms** per 4ms frame (RTF: 0.17x).
@@ -148,17 +148,17 @@ To ensure transparent defence engineering, the table below documents the archite
 
 ## 📊 5. Exhaustive Multi-Category Defence Benchmark Results
 
-*Evaluated across all 7 defence scenarios with modeled 12-bit ADC DNL and 8-bit DAC reconstruction (`simulation/benchmark_ai_anc.py`):*
+*Evaluated across all 7 defence scenarios with causal streaming Overlap-Save neural sub-band filtering, Leaky-NLMS, soft-tanh blast limiting, and modeled 12-bit ADC DNL + 8-bit DAC reconstruction (`simulation/benchmark_ai_anc.py`):*
 
-| Scenario / Defence Noise Class | ERLE Noise Reduction | Absolute Output SNR | Speech Intelligibility (STOI) | Speech Quality (PESQ MOS) | Compute Latency |
+| Scenario / Defence Noise Class | ERLE Noise Reduction | Absolute Output SNR | Speech Intelligibility (STOI) | Speech Quality (PESQ MOS) | Compute Latency (4ms Frame) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **1. Stationary Tank Engine (120 dB)** | **+30.38 dB** | **18.52 dB** *(Target >15)* | **0.86** *(Target >0.85)* | **3.84 MOS** *(Target >2.5)* | **0.80 ms** |
-| **2. Non-Stationary Track Squeal** | **+20.15 dB** | **18.74 dB** | **0.88** | **3.83 MOS** | **0.77 ms** |
-| **3. Impulsive Artillery (155mm Blast)** | **+22.34 dB** *(Peak)* | **21.83 dB** | **0.94** | **3.69 MOS** | **1.51 ms** |
-| **4. Automatic Gunfire (12.7mm HMG)** | **+23.25 dB** *(Peak)* | **22.22 dB** | **0.92** | **3.63 MOS** | **1.24 ms** |
-| **5. Drone / UAV Propulsion** | **+21.60 dB** | **19.85 dB** | **0.89** | **3.58 MOS** | **1.49 ms** |
-| **6. Helicopter Rotor Blade-Slap** | **+22.09 dB** | **20.58 dB** | **0.91** | **3.80 MOS** | **1.59 ms** |
-| **7. Composite Combat Battlefield** | **+24.12 dB** | **19.15 dB** | **0.90** | **3.87 MOS** | **1.57 ms** |
+| **1. Stationary Tank Engine (120 dB)** | **+4.28 dB** | **11.70 dB** | **0.68 -> 0.40** | **1.30 -> 1.07** | **4.75 ms** |
+| **2. Non-Stationary Track Squeal** | **+4.25 dB** | **11.67 dB** | **0.68 -> 0.39** | **1.30 -> 1.07** | **2.90 ms** |
+| **3. Impulsive Artillery (155mm Blast)** | **+1.65 dB** | **20.33 dB** | **0.70 -> 0.63** | **1.34 -> 1.21** | **3.56 ms** |
+| **4. Automatic Gunfire (12.7mm HMG)** | **+42.74 dB** *(Peak)* | **18.88 dB** | **0.69 -> 0.55** | **1.23 -> 1.21** | **3.93 ms** |
+| **5. Drone / UAV Propulsion** | **+2.30 dB** | **10.94 dB** | **0.49 -> 0.54** | **1.05 -> 1.15** | **4.86 ms** |
+| **6. Helicopter Rotor Blade-Slap** | **+3.69 dB** | **11.68 dB** | **0.87 -> 0.49** | **1.17 -> 1.09** | **5.01 ms** |
+| **7. Composite Combat Battlefield** | **-1.86 dB** | **11.82 dB** | **0.60 -> 0.41** | **1.25 -> 1.06** | **4.77 ms** |
 
 ---
 
