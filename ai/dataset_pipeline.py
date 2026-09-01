@@ -164,15 +164,54 @@ class DefenceNoiseGenerator:
                     0.3 * self.generate_gunshot_noise(duration_sec))
 
 
+try:
+    import soundfile as sf
+    SF_AVAILABLE = True
+except ImportError:
+    SF_AVAILABLE = False
+
+
 class CleanSpeechGenerator:
     """
-    Generates rich, multi-formant tactical human speech phonemes with natural pitch contours.
+    Supplies real human speech audio from open speech corpus, with rich formant synthesis fallback.
     """
-    def __init__(self, fs=16000):
+    def __init__(self, fs=16000, corpus_dir="ai/corpus/waves_yesno"):
         self.fs = fs
+        self.corpus_files = []
+        if os.path.exists(corpus_dir):
+            self.corpus_files = [
+                os.path.join(corpus_dir, f) for f in os.listdir(corpus_dir)
+                if f.endswith(".wav")
+            ]
+        self.curr_idx = 0
 
     def generate_tactical_speech(self, duration_sec=5.0):
-        """Synthesizes human speech utterances with natural formant resonance and breath pauses."""
+        """Returns clean speech sample from corpus if available, else synthesizes human speech."""
+        if self.corpus_files and SF_AVAILABLE:
+            file_path = self.corpus_files[self.curr_idx % len(self.corpus_files)]
+            self.curr_idx += 1
+            try:
+                data, sr = sf.read(file_path)
+                if len(data.shape) > 1:
+                    data = data[:, 0]
+                if sr != self.fs:
+                    target_len = int(len(data) * self.fs / sr)
+                    data = signal.resample(data, target_len)
+                
+                data = data.astype(np.float32)
+                max_abs = np.max(np.abs(data)) + 1e-6
+                data = data / max_abs * 0.75
+                
+                target_samples = int(self.fs * duration_sec)
+                if len(data) < target_samples:
+                    reps = int(np.ceil(target_samples / len(data)))
+                    data = np.tile(data, reps)[:target_samples]
+                else:
+                    data = data[:target_samples]
+                return data
+            except Exception:
+                pass
+
         n_samples = int(self.fs * duration_sec)
         speech = np.zeros(n_samples, dtype=np.float32)
         

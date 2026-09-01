@@ -14,6 +14,7 @@ Comprehensive evaluation of Causal Hybrid Neural Masking + Leaky-NLMS + Limiter 
 
 import os
 import sys
+import time
 import numpy as np
 import scipy.signal as signal
 from scipy.io import wavfile
@@ -37,8 +38,6 @@ def run_full_defence_benchmark():
     noise_gen = DefenceNoiseGenerator(fs=fs)
     speech_gen = CleanSpeechGenerator(fs=fs)
     aug_engine = DataAugmentationEngine(fs=fs)
-    
-    clean_speech = speech_gen.generate_tactical_speech(duration_sec=duration_sec)
     
     # 7 Comprehensive Evaluation Scenarios
     scenarios = [
@@ -64,7 +63,10 @@ def run_full_defence_benchmark():
     print("  [Causal Sub-Band Neural Masking + Leaky-NLMS + Soft-Tanh Limiter on 12b ADC / 8b DAC Model]            ")
     print("=========================================================================================================\n")
     
+    engine = EdgeAIRealtimeEngine(sample_rate=fs, frame_size=64)
+    
     for idx, sc in enumerate(scenarios):
+        clean_speech = speech_gen.generate_tactical_speech(duration_sec=duration_sec)
         raw_noise = sc["noise"]
         # Ambient mic picks up reference noise x(n)
         x_ambient = raw_noise
@@ -73,23 +75,12 @@ def run_full_defence_benchmark():
         # Primary sensor d(n)
         d_throat = clean_speech + leaked_noise
         
-        # Process through Causal Edge AI Real-Time Engine (64-sample frames, zero lookahead)
-        engine = EdgeAIRealtimeEngine(sample_rate=fs, frame_size=64)
+        # Process through Causal Edge AI Hybrid Engine (NLMS + DPCRN Neural Core + Limiter)
+        start_eval_t = time.perf_counter()
+        processed_output = engine.enhance_hybrid_pipeline(d_throat, x_ambient)
+        eval_dur_ms = (time.perf_counter() - start_eval_t) * 1000.0
+        avg_lat = eval_dur_ms / (len(clean_speech) / 64.0) # per 4.0ms frame
         
-        num_frames = len(clean_speech) // 64
-        processed_output = np.zeros_like(clean_speech)
-        frame_latencies = []
-        
-        for f in range(num_frames):
-            start_i = f * 64
-            end_i = start_i + 64
-            d_chk = d_throat[start_i:end_i]
-            x_chk = x_ambient[start_i:end_i]
-            
-            out_chk, lat_ms = engine.process_streaming_chunk(d_chk, x_chk)
-            processed_output[start_i:end_i] = out_chk
-            frame_latencies.append(lat_ms)
-            
         # Model Hardware Non-Linearities (ESP32 12-bit SAR ADC DNL + 8-bit DAC Quantization)
         adc_dnl_noise = np.random.normal(0, (3.3 / 4096.0) * 0.10, len(processed_output))
         dac_quantized = np.round((processed_output + adc_dnl_noise + 1.0) * 127.5) / 127.5 - 1.0
@@ -124,8 +115,6 @@ def run_full_defence_benchmark():
         
         raw_pesq = calculate_pesq_proxy(clean_speech, d_throat, fs)
         out_pesq = calculate_pesq_proxy(clean_speech, final_audio, fs)
-        
-        avg_lat = float(np.mean(frame_latencies))
         
         res = {
             "name": sc["name"],

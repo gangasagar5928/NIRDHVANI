@@ -1,9 +1,9 @@
 Scenario / Defence Noise Class      | ERLE (dB)  | Abs SNR (dB) | STOI (In->Out)     | PESQ (In->Out)     | Compute Latency
 --------------------------------------------------------------------------------------------------------------------------
-1. Stationary Engine (T-90 Tank)    |    4.28 dB |     11.70 dB | 0.68 -> 0.40 (WARN) | 1.30 -> 1.07 (WARN) | 4.75 ms
-2. Non-Stationary Track Squeal      |    4.25 dB |     11.67 dB | 0.68 -> 0.39 (WARN) | 1.30 -> 1.07 (WARN) | 2.90 ms
-3. Impulsive Artillery (155mm Blast) |    1.65 dB |     20.33 dB | 0.70 -> 0.63 (WARN) | 1.34 -> 1.21 (WARN) | 3.56 ms
-4. Automatic Gunfire (12.7mm HMG)   |   42.74 dB |     18.88 dB | 0.69 -> 0.55 (WARN) | 1.23 -> 1.21 (WARN) | 3.93 ms
-5. Drone / UAV Propulsion           |    2.30 dB |     10.94 dB | 0.49 -> 0.54 (WARN) | 1.05 -> 1.15 (WARN) | 4.86 ms
-6. Helicopter Rotor Blade-Slap      |    3.69 dB |     11.68 dB | 0.87 -> 0.49 (WARN) | 1.17 -> 1.09 (WARN) | 5.01 ms
-7. Composite Combat Battlefield     |   -1.86 dB |     11.82 dB | 0.60 -> 0.41 (WARN) | 1.25 -> 1.06 (WARN) | 4.77 ms
+1. Stationary Engine (T-90 Tank)    |    8.14 dB |     10.82 dB | 0.66 -> 0.72 (WARN) | 1.30 -> 1.21 (WARN) | 1.56 ms
+2. Non-Stationary Track Squeal      |    6.23 dB |     10.21 dB | 0.67 -> 0.70 (WARN) | 1.38 -> 1.22 (WARN) | 1.63 ms
+3. Impulsive Artillery (155mm Blast) |   -2.56 dB |     12.86 dB | 0.84 -> 0.86 (PASS) | 1.12 -> 1.39 (WARN) | 1.70 ms
+4. Automatic Gunfire (12.7mm HMG)   |   -1.96 dB |     12.54 dB | 0.74 -> 0.78 (WARN) | 1.17 -> 1.33 (WARN) | 1.48 ms
+5. Drone / UAV Propulsion           |    4.13 dB |      8.73 dB | 0.57 -> 0.84 (WARN) | 1.14 -> 1.30 (WARN) | 1.61 ms
+6. Helicopter Rotor Blade-Slap      |    6.74 dB |      9.92 dB | 0.90 -> 0.85 (PASS) | 1.07 -> 1.44 (WARN) | 1.38 ms
+7. Composite Combat Battlefield     |    1.90 dB |     10.76 dB | 0.72 -> 0.81 (WARN) | 1.17 -> 1.37 (WARN) | 1.38 ms

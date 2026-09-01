@@ -29,19 +29,66 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from dsp_core import NLMSFilter, AcousticImpulseLimiter
 
 
+try:
+    import torch
+    from model_dpcrn import DPCRNSpeechEnhancer
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
+
+class DeepNeuralEnhancerEngine:
+    """
+    Executes deep complex recurrent neural network (DPCRN) mask estimation on audio.
+    """
+    def __init__(self, checkpoint_path=None, device="cpu"):
+        self.device = torch.device(device) if TORCH_AVAILABLE else None
+        self.model = None
+        if TORCH_AVAILABLE:
+            self.model = DPCRNSpeechEnhancer().to(self.device)
+            if checkpoint_path and os.path.exists(checkpoint_path):
+                try:
+                    ckpt = torch.load(checkpoint_path, map_location=self.device)
+                    if "model_state_dict" in ckpt:
+                        self.model.load_state_dict(ckpt["model_state_dict"])
+                    else:
+                        self.model.load_state_dict(ckpt)
+                    self.model.eval()
+                except Exception as e:
+                    print(f"[DeepNeuralEngine] Warning loading checkpoint: {e}")
+
+    def enhance(self, d_audio: np.ndarray, x_audio: np.ndarray) -> np.ndarray:
+        """Runs complex STFT cIRM mask inference across full audio sequence."""
+        if not TORCH_AVAILABLE or self.model is None:
+            return d_audio
+        
+        n_samples = min(len(d_audio), len(x_audio))
+        d_t = torch.from_numpy(d_audio[:n_samples]).unsqueeze(0).float().to(self.device)
+        x_t = torch.from_numpy(x_audio[:n_samples]).unsqueeze(0).float().to(self.device)
+        
+        with torch.no_grad():
+            enh_t, _, _ = self.model(d_t, x_t)
+            
+        enh = enh_t.squeeze(0).cpu().numpy()
+        return enh.astype(np.float32)
+
+
 class EdgeAIRealtimeEngine:
     """
     Real-time streaming inference engine executing the hybrid AI/ML + NLMS + Limiter pipeline.
     """
-    def __init__(self, sample_rate=16000, frame_size=64):
+    def __init__(self, sample_rate=16000, frame_size=64, checkpoint_path="checkpoints/best_model.pth"):
         self.sample_rate = sample_rate
         self.frame_size = frame_size # 64 samples = 4.0 ms at 16 kHz
         
         # Stage 1: Leaky-NLMS Adaptive Filter with DTD
         self.nlms_filter = NLMSFilter(num_taps=64, mu=0.35, epsilon=1e-4, leakage=1e-5, enable_dtd=True)
         
-        # Stage 2: Causal Sub-Band Neural Enhancer
+        # Stage 2A: Causal Sub-Band Neural Enhancer (Real-time edge streaming)
         self.neural_enhancer = StandaloneNeuralEnhancer(sample_rate=sample_rate, num_bands=16, frame_size=frame_size)
+        
+        # Stage 2B: Deep Neural Core (DPCRN)
+        self.deep_engine = DeepNeuralEnhancerEngine(checkpoint_path=checkpoint_path)
         
         # Stage 3: Hearing Protection Soft-Tanh Blast Limiter
         self.blast_limiter = AcousticImpulseLimiter(threshold=0.80, soft_knee=True)
@@ -53,13 +100,6 @@ class EdgeAIRealtimeEngine:
     def process_streaming_chunk(self, d_chunk: np.ndarray, x_chunk: np.ndarray):
         """
         Processes a single causal 64-sample frame (4.0 ms) with strictly zero lookahead delay.
-        
-        Args:
-            d_chunk: [64] Primary throat contact sensor samples.
-            x_chunk: [64] Reference ambient noise microphone samples.
-        Returns:
-            out_chunk: [64] Clean enhanced speech audio.
-            proc_time_ms: Execution time for this frame (<0.4 ms).
         """
         start_t = time.perf_counter()
         
@@ -80,6 +120,34 @@ class EdgeAIRealtimeEngine:
         self.total_proc_time_sec += (proc_time_ms / 1000.0)
         
         return out_chunk, proc_time_ms
+
+    def enhance_hybrid_pipeline(self, d_audio: np.ndarray, x_audio: np.ndarray) -> np.ndarray:
+        """
+        Full 3-stage hybrid pipeline:
+        Stage 1: Leaky-NLMS + DTD cancels linear acoustic coupling.
+        Stage 2: Deep DPCRN cIRM Neural Core suppresses non-linear battlefield noise.
+        Stage 3: Soft-Tanh Limiter protects eardrums against blast shocks.
+        """
+        n_samples = min(len(d_audio), len(x_audio))
+        d_audio = d_audio[:n_samples]
+        x_audio = x_audio[:n_samples]
+        
+        # Stage 1: NLMS
+        nlms_out = np.zeros(n_samples, dtype=np.float32)
+        self.nlms_filter.reset()
+        for i in range(n_samples):
+            e, _ = self.nlms_filter.step(float(d_audio[i]), float(x_audio[i]))
+            nlms_out[i] = e
+            
+        # Stage 2: Deep DPCRN Neural Core
+        if TORCH_AVAILABLE and self.deep_engine.model is not None:
+            neural_out = self.deep_engine.enhance(nlms_out, x_audio)
+        else:
+            neural_out = nlms_out
+            
+        # Stage 3: Blast Limiter
+        final_out = self.blast_limiter.process_stream(neural_out)
+        return final_out
 
     def process_file_stream(self, d_wav_path, x_wav_path, out_wav_path=None):
         """

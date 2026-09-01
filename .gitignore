@@ -37,6 +37,7 @@ scripts/
 
 # Dataset & Output Binaries
 ai/data/
+ai/corpus/
 simulation/output/*.wav
 simulation/output/*.png
 checkpoints/*.pth
