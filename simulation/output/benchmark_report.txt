@@ -9,10 +9,10 @@ NIRDHVANI Tactical ANC Multi-Category Benchmark Report
        * SNR Gain             : +4.68 dB
 
    - 2. Non-Stationary Noise (Track):
-       * ERLE Noise Reduction : 20.98 dB
-       * STOI Intelligibility : 0.29 (Raw) -> 0.60 (Processed)
+       * ERLE Noise Reduction : 20.17 dB
+       * STOI Intelligibility : 0.31 (Raw) -> 0.62 (Processed)
        * PESQ MOS Quality     : 1.03 (Raw) -> 1.05 (Processed)
-       * SNR Gain             : +-3.06 dB
+       * SNR Gain             : +-3.00 dB
 
    - 3. Impulsive Noise (Artillery):
        * ERLE Noise Reduction : 1.50 dB
@@ -21,10 +21,10 @@ NIRDHVANI Tactical ANC Multi-Category Benchmark Report
        * SNR Gain             : +-2.14 dB
 
    - 4. Composite Combat Field:
-       * ERLE Noise Reduction : 18.17 dB
-       * STOI Intelligibility : 0.42 (Raw) -> 0.45 (Processed)
-       * PESQ MOS Quality     : 1.51 (Raw) -> 1.07 (Processed)
-       * SNR Gain             : +-4.27 dB
+       * ERLE Noise Reduction : 18.11 dB
+       * STOI Intelligibility : 0.43 (Raw) -> 0.45 (Processed)
+       * PESQ MOS Quality     : 1.50 (Raw) -> 1.07 (Processed)
+       * SNR Gain             : +-4.13 dB
 
 2. TinyML Engine:
    - Model Architecture : 2-Layer Quantized Perceptron (8 -> 16 -> 5)
