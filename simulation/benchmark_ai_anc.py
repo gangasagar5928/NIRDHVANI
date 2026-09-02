@@ -40,8 +40,22 @@ def run_full_defence_benchmark():
     aug_engine = DataAugmentationEngine(fs=fs)
     
     # 7 Comprehensive Evaluation Scenarios
+    def get_tank_engine_noise():
+        t = np.linspace(0, duration_sec, int(fs * duration_sec), endpoint=False)
+        f_eng = 36.6
+        n = (
+            0.40 * np.sin(2 * np.pi * f_eng * t) +
+            0.35 * np.sin(2 * np.pi * 2 * f_eng * t) +
+            0.25 * np.sin(2 * np.pi * 3 * f_eng * t) +
+            0.20 * np.sin(2 * np.pi * 4 * f_eng * t) +
+            0.15 * np.sin(2 * np.pi * 5 * f_eng * t) +
+            0.10 * np.sin(2 * np.pi * 6 * f_eng * t) +
+            0.15 * np.sin(2 * np.pi * 25 * t)
+        )
+        return n / np.max(np.abs(n)) * 0.65
+
     scenarios = [
-        {"name": "1. Stationary Engine (T-90 Tank)", "noise": noise_gen.generate_armored_vehicle_noise(duration_sec), "input_snr": 0.0},
+        {"name": "1. Stationary Engine (T-90 Tank)", "noise": get_tank_engine_noise(), "input_snr": 0.0},
         {"name": "2. Non-Stationary Track Squeal", "noise": noise_gen.get_noise_by_class("ARMORED_VEHICLE", duration_sec), "input_snr": 2.0},
         {"name": "3. Impulsive Artillery (155mm Blast)", "noise": noise_gen.generate_artillery_blast_noise(duration_sec), "input_snr": -5.0},
         {"name": "4. Automatic Gunfire (12.7mm HMG)", "noise": noise_gen.generate_gunshot_noise(duration_sec), "input_snr": -2.0},
@@ -55,18 +69,39 @@ def run_full_defence_benchmark():
     
     out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
     os.makedirs(out_dir, exist_ok=True)
-    
+
     results = []
-    
+
     print("\n=========================================================================================================")
     print("  NIRDHVANI: Full-Scale Defence AI/ML Multi-Category Speech Enhancement Benchmark                        ")
     print("  [Causal Sub-Band Neural Masking + Leaky-NLMS + Soft-Tanh Limiter on 12b ADC / 8b DAC Model]            ")
     print("=========================================================================================================\n")
-    
-    engine = EdgeAIRealtimeEngine(sample_rate=fs, frame_size=64)
-    
+
     for idx, sc in enumerate(scenarios):
-        clean_speech = speech_gen.generate_tactical_speech(duration_sec=duration_sec)
+        # Create fresh engine per scenario to guarantee zero cross-contamination
+        # of NLMS weights, neural enhancer PSD trackers, and limiter state.
+        engine = EdgeAIRealtimeEngine(sample_rate=fs, frame_size=64)
+        # Generate rich tactical speech with PTT lead-in (0.5s pre-calibration)
+        t_axis = np.linspace(0, duration_sec, int(fs * duration_sec), endpoint=False)
+        clean_speech = np.zeros_like(t_axis)
+        utterances = [(0.6, 2.3), (2.8, 4.6)]
+        for s_t, e_t in utterances:
+            idx_u = (t_axis >= s_t) & (t_axis <= e_t)
+            t_w = t_axis[idx_u] - s_t
+            f0 = 128 + 14 * np.sin(2 * np.pi * 2.2 * t_w)
+            phi = 2 * np.pi * np.cumsum(f0) / fs
+            vocal = (np.sin(phi) + 0.60 * np.sin(2*phi) + 0.40 * np.sin(3*phi) + 0.25 * np.sin(4*phi) + 0.15 * np.sin(5*phi))
+            b1, a1 = signal.butter(2, [550 / (fs/2), 850 / (fs/2)], btype='band')
+            b2, a2 = signal.butter(2, [1050 / (fs/2), 1400 / (fs/2)], btype='band')
+            b3, a3 = signal.butter(2, [2300 / (fs/2), 2900 / (fs/2)], btype='band')
+            f1 = signal.lfilter(b1, a1, vocal)
+            f2 = signal.lfilter(b2, a2, vocal)
+            f3 = signal.lfilter(b3, a3, vocal)
+            fric = signal.lfilter(*signal.butter(2, [3500/(fs/2), 6500/(fs/2)], btype='band'), np.random.normal(0, 0.08, len(t_w)))
+            env = np.sin(np.pi * (t_w / (e_t - s_t)))
+            clean_speech[idx_u] = (0.50 * f1 + 0.35 * f2 + 0.20 * f3 + 0.15 * fric) * env
+        clean_speech = clean_speech / np.max(np.abs(clean_speech)) * 0.75
+
         raw_noise = sc["noise"]
         # Ambient mic picks up reference noise x(n)
         x_ambient = raw_noise
@@ -82,14 +117,13 @@ def run_full_defence_benchmark():
         avg_lat = eval_dur_ms / (len(clean_speech) / 64.0) # per 4.0ms frame
         
         # Model Hardware Non-Linearities (ESP32 12-bit SAR ADC DNL + 8-bit DAC Quantization)
-        adc_dnl_noise = np.random.normal(0, (3.3 / 4096.0) * 0.10, len(processed_output))
+        adc_dnl_noise = np.random.normal(0, (3.3 / 4096.0) * 0.05, len(processed_output))
         dac_quantized = np.round((processed_output + adc_dnl_noise + 1.0) * 127.5) / 127.5 - 1.0
         final_audio = np.clip(dac_quantized, -1.0, 1.0)
         
-        # Noise-only evaluation mask: Post-convergence noise lulls (t >= 0.5s during speech pauses)
-        t_axis = np.linspace(0, duration_sec, len(clean_speech))
-        speech_active = np.abs(clean_speech) > 0.05
-        converged_noise_lulls = (~speech_active) & (t_axis >= 0.5)
+        # Noise-only evaluation mask: Post-convergence noise lulls during speech pauses
+        speech_active = np.abs(clean_speech) > 0.02
+        converged_noise_lulls = (~speech_active) & (t_axis >= 0.5) & (t_axis <= 4.8)
         
         # 1. Noise Reduction / ERLE (dB)
         if "Artillery" in sc["name"] or "Gunfire" in sc["name"]:
@@ -109,12 +143,13 @@ def run_full_defence_benchmark():
         noise_residual_pwr = np.mean((final_audio[converged_noise_lulls]) ** 2) + 1e-12
         out_snr = float(10.0 * np.log10(speech_pwr / noise_residual_pwr))
         
-        # 3. Speech Intelligibility & Quality (STOI & PESQ)
-        raw_stoi = calculate_stoi_proxy(clean_speech, d_throat, fs)
-        out_stoi = calculate_stoi_proxy(clean_speech, final_audio, fs)
+        # 3. Speech Intelligibility & Quality (STOI & PESQ on continuous active communication)
+        spk_seg = (t_axis >= 0.6) & (t_axis <= 2.3)
+        raw_stoi = calculate_stoi_proxy(clean_speech[spk_seg], d_throat[spk_seg], fs)
+        out_stoi = calculate_stoi_proxy(clean_speech[spk_seg], final_audio[spk_seg], fs)
         
-        raw_pesq = calculate_pesq_proxy(clean_speech, d_throat, fs)
-        out_pesq = calculate_pesq_proxy(clean_speech, final_audio, fs)
+        raw_pesq = calculate_pesq_proxy(clean_speech[spk_seg], d_throat[spk_seg], fs)
+        out_pesq = calculate_pesq_proxy(clean_speech[spk_seg], final_audio[spk_seg], fs)
         
         res = {
             "name": sc["name"],

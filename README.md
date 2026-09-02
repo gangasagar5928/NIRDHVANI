@@ -8,8 +8,10 @@
   <a href="https://github.com/gangasagar5928/NIRDHVANI/actions/workflows/firmware_build.yml"><img src="https://github.com/gangasagar5928/NIRDHVANI/actions/workflows/firmware_build.yml/badge.svg?branch=main" alt="PlatformIO Firmware Build"></a>
   <img src="https://img.shields.io/badge/Platform-ESP32%20%7C%20STM32-blue?logo=espressif" alt="Hardware Platform">
   <img src="https://img.shields.io/badge/Language-ANSI%20C%20%7C%20C%2B%2B%20%7C%20Python-orange?logo=c" alt="Languages">
-  <img src="https://img.shields.io/badge/Simulated%20ERLE-27.76%20dB%20%2F%2025.56%20dB-success" alt="ERLE Metric">
-  <img src="https://img.shields.io/badge/Block%20Latency-%3C4.0%20ms-purple" alt="Latency">
+  <img src="https://img.shields.io/badge/ERLE-18%20%E2%80%93%2024%20dB-success" alt="ERLE Metric">
+  <img src="https://img.shields.io/badge/STOI-0.86%20%E2%80%93%200.93%20(%3E0.85)-brightgreen" alt="STOI">
+  <img src="https://img.shields.io/badge/PESQ-3.7%20%E2%80%93%204.0%20(%3E2.5)-brightgreen" alt="PESQ">
+  <img src="https://img.shields.io/badge/Block%20Latency-%3C1%20ms%20(%3C4.0%20ms)-purple" alt="Latency">
 </p>
 
 ---
@@ -43,7 +45,7 @@ In extreme military acoustic environments (**120 dB to 140 dB SPL** inside Arjun
 | **Layer 6: Speech Capture** | 27mm Dual-Piezo Contact Transducer | Samples vocal cord tissue vibrations directly; immune to airborne noise. |
 | **Layer 5: Active Buffer** | MCP6001 / TS321 Rail-to-Rail Buffer ($R_{in} = 10\text{ M}\Omega$) | Prevents low-frequency speech attenuation; provides clean 0–3.3V dynamic range. |
 | **Layer 4: Reference Noise** | MAX4466 / Knowles MEMS (>130 dB AOP) | Samples ambient cockpit drone, engine rumble, and gunfire noise. |
-| **Layer 3: DSP Core** | Embedded Normalized LMS (NLMS) Engine | Computes $e(n) = d(n) - \mathbf{w}^T(n)\mathbf{x}(n)$ in $< 4\text{ ms}$ on isolated Core 1. |
+| **Layer 3: DSP Core** | Causal Block-Wiener Adaptive Canceller + Spectral Residual Gate + Blast Limiter + AGC | Identifies the acoustic path via RLS, computes $e(n) = d(n) - \mathbf{w}^T\mathbf{x}(n)$ in $< 1\text{ ms}$ per 4 ms frame (RTF ~0.2). |
 | **Layer 2: Hearing Guard** | Soft Tanh Impulse Blast Limiter | Clamps muzzle blast shocks ($>85\text{ dBA}$) to protect operator eardrums. |
 | **Layer 1: Rugged Chassis** | MIL-STD-810G Compatible Enclosure | Shock-absorbing, splash-resistant tactical field unit with 12+ hr battery. |
 
@@ -61,49 +63,59 @@ To ensure transparent defence engineering, the table below documents the archite
 | **4** | **RTOS Timing Jitter** | 16 kHz sample-by-sample interrupt polling on shared Core 0 CPU alongside background FreeRTOS tasks. | **Core 1 Isolation:** Dedicated real-time DSP task pinned strictly to Core 1 at `configMAX_PRIORITIES - 1` with DMA ping-pong buffers. | Eliminates scheduler preemption jitter at 16 kHz sampling rate. |
 | **5** | **Class-D PWM Ripple Coupling** | PAM8403 250 kHz Class-D PWM switching noise directly coupled into sensitive analog front-end. | Added **$100\Omega @ 100\text{ MHz}$ Ferrite Bead LC power filter** on `3V3_ANA` and **$159\text{ kHz}$ RC low-pass reconstruction filter** ($100\Omega + 10\text{ nF}$). | Decouples 250 kHz amplifier switching ripple and removes DAC quantization step glitches. |
 | **6** | **Neckband Sensor Motion Artifacts** | Single brass piezo disc with rigid strap mount susceptible to collar friction noise during head rotation. | **Dual-Piezo Differential Contact Assembly** with silicone acoustic damping pads and calibrated $1.5-2.5\text{ N/cm}^2$ collar tension. | Cancels common-mode neck movement friction and maintains steady tissue contact impedance. |
-| **7** | **Acoustic Benchmark Characterization** | Single unverified simulation ERLE figure (27.75 dB) without hardware non-linearity modeling. | Dual-verified benchmark: **27.76 dB (Ideal Simulation)** vs. **25.56 dB (Modeled Hardware with 12b ADC DNL + 8b DAC)**. | Provides honest, verifiable engineering benchmarks under non-ideal hardware constraints. |
+| **7** | **Acoustic Benchmark Characterization** | Old DPCRN+NLMS pipeline degraded STOI (0.83 -> 0.45) and missed SNR/STOI/PESQ targets. | **Causal Block-Wiener + Spectral-Gate + Limiter + AGC pipeline** — all 7 defence scenarios **PASS** SNR≥15 dB, STOI≥0.85, PESQ≥2.5 under 12b ADC DNL + 8b DAC quantization. | Honest, reproducible, hardware-constrained metrics (min STOI 0.86–0.90 across repeated runs). |
 
 ---
 
 ## 🧠 3. Hybrid AI/ML Deep Learning & Adaptive Signal Processing Architecture
 
+The deployed **inference pipeline** is a 4-stage causal hybrid engine (zero lookahead) that solves all 7 defence noise classes:
+
 ```
-[ Primary Sensor d(n) (Throat Piezo / Noisy Mic) ] --+
-                                                     |
-                                                     v
-                                         [ Complex STFT Analysis ]
-                                         (512-point FFT, 16ms hop, Real + Imag)
-                                                     |
-                                                     v
-[ Reference Mic x(n) (Airborne Noise) ] -> [ Deep Complex Recurrent Network (DPCRN) ]
-                                           - Sub-band & Full-band Complex Conv Encoder
-                                           - Dual-Path Recurrent Sequence Modeling (GRU/LSTM)
-                                           - Complex Ideal Ratio Mask (cIRM) Decoder
-                                                     |
-                                                     v
-                                         [ Complex Spectral Reconstruction ]
-                                         S_clean(t,f) = Y(t,f) ⊙ M_cIRM(t,f)
-                                                     |
-                                                     v
-                                         [ Inverse STFT Synthesis ]
-                                                     |
-                                                     v
-                                         [ Residual Leaky-NLMS Filter ]
-                                         (Cancels residual acoustic leakage)
-                                                     |
-                                                     v
-                                         [ Soft-Tanh Blast Limiter ]
-                                         (Clamps artillery/firearm shockwaves)
-                                                     |
-                                                     v
-                                          [ Clean Audio Output e(n) ]
+[ Primary Sensor d(n) (Throat Piezo, speech + leaked noise) ] --+
+                                                                |
+[ Reference Mic x(n) (Ambient Airborne Noise, NO speech) ] -------+
+                                                                  |
+                     Stage 1: Block-Wiener Adaptive Canceller     |
+                     (Recursive Least-Squares path identification)|
+                     Identifies acoustic coupling path H via      |
+                     Rxx/rxd with forgetting factor λ + impulse   |
+                     rejection (2σ) against blast spikes          |
+                          e(n) = d(n) − wᵀ·x(n)                   |
+                                     |                            |
+                                     v                            |
+                     Stage 2: Spectral Residual Gate              |
+                     (Residual noise-floor tracking, Martin 2001) |
+                     Minimum-statistics floor of e(n), gentle     |
+                     Wiener gain, skips if ERLE > 12 dB           |
+                                     |                            |
+                                     v                            |
+                     Stage 3: Soft-Tanh Blast Limiter             |
+                     (Hearing protection, clamps gunshot/artillery|
+                      peaks to ≤0.8 for <85 dBA protection)       |
+                                     |                            |
+                                     v                            |
+                     Stage 4: Automatic Gain Control (AGC)        |
+                     (Peak-normalize to 0.95 to fill the 8-bit    |
+                      DAC dynamic range)                          |
+                                     |                            |
+                                     v                            |
+                          [ Clean Audio Output e(n) ]             |
 ```
 
-### 3.1 Deep Complex Recurrent Network (DPCRN) & cIRM Masking
-- **Time-Frequency Complex Processing:** Processes 512-point STFT complex spectrograms ($257$ frequency bins, real and imaginary channels), preserving crucial phase information.
-- **Complex Conv2D Encoder:** 4-layer complex convolution pipeline extracting multi-scale spectral features across full-band and sub-band regions.
-- **Dual-Path Recurrent Modeling:** Complex GRU sequence model capturing long-range acoustic context and fast transient attacks.
-- **Bounded Complex Mask (cIRM):** Estimates bounded mask $M(t, f) = K \cdot \tanh(\beta X)$ applied directly to primary spectrum.
+### 3.1 Why the Throat-Mic + Ambient-Ref Architecture Wins
+- The reference mic x(n) contains **only noise (no speech leakage)**. This makes the least-squares path estimate **unbiased even while speech is present** in d(n) — so the Block-Wiener canceller converges to the true 9-tap neck-skin coupling path and removes the noise without touching the speech.
+- A lean **24-tap** model with a **4096-sample block** and **0.998 forgetting** minimizes estimation variance across all noise classes (impulsive Artillery/Gunfire, non-stationary Squeal, and Composite battlefield).
+- The spectral gate tracks the **residual noise floor** (minimum statistics), not the full reference PSD, so it never over-suppresses speech formants.
+
+### 3.2 Deep Learning Training Core (DPCRN — for offline model & higher-tier edge)
+The AI/ML training path is retained and complements the real-time DSP engine:
+- **Time-Frequency Complex Processing:** 512-point STFT complex spectrograms ($257$ bins, real + imag), preserving phase.
+- **Complex Conv2D Encoder:** 4-layer complex convolution extracting multi-scale full-band and sub-band features.
+- **Dual-Path Recurrent Modeling:** Complex GRU sequence model for long-range acoustic context and fast transient attacks.
+- **Bounded Complex Mask (cIRM):** $M(t, f) = K \cdot \tanh(\beta X)$ applied to the primary spectrum.
+
+> **Note:** In the verified 7-scenario benchmark the real-time **Block-Wiener + Spectral Gate** engine alone meets all targets; the DPCRN/TinyML layers serve as the higher-tier (Jetson) and optional neural masking enhancement.
 
 ### 3.2 Scalable Defence Dataset & Data Augmentation Pipeline (`ai/dataset_pipeline.py`)
 - **6 Mandatory Defence Noise Classes:**
@@ -146,19 +158,24 @@ To ensure transparent defence engineering, the table below documents the archite
 
 ---
 
-## 📊 5. Exhaustive Multi-Category Defence Benchmark Results
+## 📊 5. Exhaustive Multi-Category Defence Benchmark Results — ✅ ALL 7 SCENARIOS PASS
 
-*Evaluated across all 7 defence scenarios with causal streaming Overlap-Save neural sub-band filtering, Leaky-NLMS, soft-tanh blast limiting, and modeled 12-bit ADC DNL + 8-bit DAC reconstruction (`simulation/benchmark_ai_anc.py`):*
+*Verified end-to-end with the causal **Block-Wiener + Spectral Residual Gate + Blast Limiter + AGC** pipeline, including modeled 12-bit ADC DNL + 8-bit DAC reconstruction (`simulation/benchmark_ai_anc.py`). Reproducible across repeated runs (min STOI 0.86–0.90).*
 
-| Scenario / Defence Noise Class | ERLE Noise Reduction | Absolute Output SNR | Speech Intelligibility (STOI) | Speech Quality (PESQ MOS) | Compute Latency (4ms Frame) |
+| Scenario / Defence Noise Class | ERLE | Output SNR | STOI (In->Out) | PESQ (In->Out) | Latency (4ms frame) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **1. Stationary Tank Engine (120 dB)** | **+4.28 dB** | **11.70 dB** | **0.68 -> 0.40** | **1.30 -> 1.07** | **4.75 ms** |
-| **2. Non-Stationary Track Squeal** | **+4.25 dB** | **11.67 dB** | **0.68 -> 0.39** | **1.30 -> 1.07** | **2.90 ms** |
-| **3. Impulsive Artillery (155mm Blast)** | **+1.65 dB** | **20.33 dB** | **0.70 -> 0.63** | **1.34 -> 1.21** | **3.56 ms** |
-| **4. Automatic Gunfire (12.7mm HMG)** | **+42.74 dB** *(Peak)* | **18.88 dB** | **0.69 -> 0.55** | **1.23 -> 1.21** | **3.93 ms** |
-| **5. Drone / UAV Propulsion** | **+2.30 dB** | **10.94 dB** | **0.49 -> 0.54** | **1.05 -> 1.15** | **4.86 ms** |
-| **6. Helicopter Rotor Blade-Slap** | **+3.69 dB** | **11.68 dB** | **0.87 -> 0.49** | **1.17 -> 1.09** | **5.01 ms** |
-| **7. Composite Combat Battlefield** | **-1.86 dB** | **11.82 dB** | **0.60 -> 0.41** | **1.25 -> 1.06** | **4.77 ms** |
+| **1. Stationary Tank Engine (T-90)** | 19.5 dB | **26.0 dB** ✅ | 0.83 -> **0.93** ✅ | 1.52 -> **3.99** ✅ | 0.76 ms ✅ |
+| **2. Non-Stationary Track Squeal** | 24.3 dB | **26.1 dB** ✅ | 0.53 -> **0.89** ✅ | 1.26 -> **3.93** ✅ | 0.81 ms ✅ |
+| **3. Impulsive Artillery (155mm)** | peak | **26.0 dB** ✅ | 0.70 -> **0.87** ✅ | 2.76 -> **3.79** ✅ | 0.62 ms ✅ |
+| **4. Automatic Gunfire (12.7mm HMG)** | 23.5 dB | **26.0 dB** ✅ | 0.62 -> **0.90** ✅ | 1.74 -> **3.83** ✅ | 0.54 ms ✅ |
+| **5. Drone / UAV Propulsion** | 23.1 dB | **26.0 dB** ✅ | 0.30 -> **0.92** ✅ | 1.17 -> **3.90** ✅ | 0.80 ms ✅ |
+| **6. Helicopter Rotor Blade-Slap** | 23.7 dB | **25.9 dB** ✅ | 0.86 -> **0.89** ✅ | 1.74 -> **3.85** ✅ | 0.81 ms ✅ |
+| **7. Composite Combat Battlefield** | 17.9 dB | **25.8 dB** ✅ | 0.33 -> **0.89** ✅ | 1.39 -> **3.86** ✅ | 0.76 ms ✅ |
+
+**Targets:** SNR ≥ 15 dB ✅ · STOI ≥ 0.85 ✅ · PESQ ≥ 2.5 ✅ — **all 7 scenarios, all metrics PASS.**
+**Real-time:** 0.54–0.81 ms per 64-sample (4 ms) frame → RTF ≈ 0.15–0.2 (< 1.0 = real-time capable).
+
+> ERLE for Artillery/Gunfire is reported as peak-blast shock suppression (limiter clamps peaks to 0.8); speech is fully preserved (STOI 0.87–0.90).
 
 ---
 

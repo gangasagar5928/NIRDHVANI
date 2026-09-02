@@ -181,6 +181,13 @@ class StandaloneNeuralEnhancer:
         self.alpha_s = 0.80
         self.alpha_n = 0.92
 
+    def reset(self):
+        """Reset all internal state (history buffers, PSD trackers) for a new signal."""
+        self.e_hist = np.zeros(self.fft_size, dtype=np.float32)
+        self.x_hist = np.zeros(self.fft_size, dtype=np.float32)
+        self.speech_psd = np.ones(self.num_bands) * 0.01
+        self.noise_psd = np.ones(self.num_bands) * 0.01
+
     def enhance_frame(self, e_chunk: np.ndarray, x_chunk: np.ndarray) -> np.ndarray:
         """
         Enhances a 64-sample (4.0 ms) frame causally using overlap-save sub-band neural Wiener masking.
@@ -227,7 +234,9 @@ class StandaloneNeuralEnhancer:
         fft_mask = np.ones_like(E_fft, dtype=np.float64)
         for b in range(self.num_bands):
             idx = (freqs >= self.band_edges[b]) & (freqs < self.band_edges[b+1])
-            g = float(np.clip(band_gain[b], 0.70, 1.0))
+            # Allow deeper suppression on non-speech bands (floor 0.10 = -20 dB)
+            # but keep 100% transparency on active speech formant bands
+            g = float(np.clip(band_gain[b], 0.10, 1.0))
             if speech_bands[b]:
                 g = 1.0 # 100% transparent on active vocal formants
             fft_mask[idx] = g
