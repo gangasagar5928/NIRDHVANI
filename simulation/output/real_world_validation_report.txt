@@ -1,0 +1,17 @@
+Scenario                           | Noise Src            | Tier   | SNR(dB) |    STOI In->Out |    PESQ In->Out
+----------------------------------------------------------------------------------------------------------------------
+1. Stationary Engine (T-90 Tank)   | SYNTH-FALLBACK       | DSP    |   24.9 | 0.69->0.95 | 1.34->2.18
+1. Stationary Engine (T-90 Tank)   | SYNTH-FALLBACK       | DPCRN  |    7.2 | 0.69->0.69 | 1.34->1.48
+4. Automatic Gunfire (12.7mm HMG)  | SYNTH-FALLBACK       | DSP    |   24.9 | 0.76->0.95 | 1.12->2.18
+4. Automatic Gunfire (12.7mm HMG)  | SYNTH-FALLBACK       | DPCRN  |   16.2 | 0.76->0.81 | 1.12->1.17
+5. Drone / UAV Propulsion          | SYNTH-FALLBACK       | DSP    |   24.9 | 0.60->0.96 | 1.11->2.18
+5. Drone / UAV Propulsion          | SYNTH-FALLBACK       | DPCRN  |    8.1 | 0.60->0.59 | 1.11->1.19
+6. Helicopter Rotor Blade-Slap     | SYNTH-FALLBACK       | DSP    |   24.7 | 0.87->0.94 | 1.06->2.15
+6. Helicopter Rotor Blade-Slap     | SYNTH-FALLBACK       | DPCRN  |   10.2 | 0.87->0.85 | 1.06->1.78
+
+NOTES:
+- Speech source: REAL waves_yesno open speech corpus (ai/corpus/waves_yesno).
+- Noise source: REAL if CC field recordings are present in ai/real_noise/<CLASS>/
+  (fetch with --download-real --token TOKEN, or drop real WAVs in). Otherwise the
+  row is labelled 'SYNTH-FALLBACK' to be transparent.
+- Tier-1 DSP scored after modeled 8-bit DAC quantization; Tier-2 DPCRN on raw 24-bit output.

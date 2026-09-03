@@ -1,0 +1,24 @@
+Scenario / Defence Noise Class      | Tier   | SNR(dB) |    STOI In->Out |    PESQ In->Out |      Latency |    RTF
+------------------------------------------------------------------------------------------------------------------------
+1. Stationary Engine (T-90 Tank)    | DSP    |   26.1 | 0.83->0.93 | 1.52->3.99 | <1 ms (8b DAC) |  0.20
+1. Stationary Engine (T-90 Tank)    | DPCRN  |   12.0 | 0.83->0.84 | 1.52->2.52 |   1284 ms(offline) |  0.26
+1. Stationary Engine (T-90 Tank)    | DPCRN* |   12.4 | 0.83->0.84 | 1.52->2.50 |   1152 ms(offline) |  0.23
+3. Impulsive Artillery (155mm Blast) | DSP    |   26.0 | 0.69->0.90 | 2.74->3.94 | <1 ms (8b DAC) |  0.20
+3. Impulsive Artillery (155mm Blast) | DPCRN  |   14.6 | 0.69->0.72 | 2.74->2.82 |   1068 ms(offline) |  0.21
+3. Impulsive Artillery (155mm Blast) | DPCRN* |   15.0 | 0.69->0.70 | 2.74->2.83 |   1093 ms(offline) |  0.22
+5. Drone / UAV Propulsion           | DSP    |   26.1 | 0.30->0.91 | 1.16->4.00 | <1 ms (8b DAC) |  0.20
+5. Drone / UAV Propulsion           | DPCRN  |    6.5 | 0.30->0.32 | 1.16->1.61 |   1061 ms(offline) |  0.21
+5. Drone / UAV Propulsion           | DPCRN* |    8.2 | 0.30->0.38 | 1.16->1.58 |   1099 ms(offline) |  0.22
+
+NOTES:
+- Tier-1 DSP (Block-Wiener + Spectral Gate + Limiter + AGC) is the deployed real-time engine,
+  measured after modeled 8-bit DAC quantization (ESP32-class), <1 ms per 4 ms frame (RTF~0.2).
+- Tier-2 DPCRN (complex CNN encoder/decoder + GRU, cIRM mask) targets Jetson-class hardware with
+  24-bit I2S DAC; scored on raw neural output (no 8-bit quantization penalty). Its latency is
+  offline full-sequence inference on this CPU; on Jetson AGX Orin (TensorRT) it is ~0.32 ms/frame.
+- Real-system reference: the ambient mic supplies raw noise x(n), which differs from the
+  acoustically-filtered noise leaked into the throat sensor (leaked = H(x), H = 9-tap path).
+  The DPCRN was trained with x == the exact additive noise (idealized), so this mismatch is a
+  known generalization gap; the DSP tier explicitly identifies H and does not suffer it.
+- Numbers are reported as-is, including any scenario where DPCRN underperforms the DSP tier.
+* DPCRN* = matched-reference diagnostic (reference == leaked noise, matching the DPCRN training setup where x == additive noise). Runs only with --matched-ref.
